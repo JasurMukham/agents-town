@@ -253,8 +253,45 @@ function buildMap(){
     let ok=true; for(let dy=-1;dy<=1&&ok;dy++)for(let dx=-1;dx<=1;dx++){const c=out[y+dy][x+dx];if(c!=="g"&&c!=="t"){ok=false;break}}
     if(ok&&!(y+1<OH&&out[y+1][x]==="s")) out[y][x]="t";
   }
+  // street lamps: evenly along every road, on the grass edge
+  LAMPS=[]; const okL=(x,y)=>out[y]&&out[y][x]==="g"&&!(out[y+1]&&out[y+1][x]==="s")&&!(out[y-1]&&out[y-1][x]==="s");
+  const putL=(x,y,alts)=>{for(const [dx,dy] of alts){const X=x+dx,Y=y+dy;if(okL(X,Y)&&!LAMPS.some(l=>Math.abs(l.tx-X)+Math.abs(l.ty-Y)<3)){out[Y][X]="l";LAMPS.push({tx:X,ty:Y});return}}};
+  [8,16,24].forEach(ry=>{for(let x=4;x<=40;x+=6){putL(x,ry+1,[[0,0],[1,0],[-1,0],[0,-2],[1,-2],[-1,-2]])}});
+  [11,22,33].forEach(cx=>{for(let y=11;y<=22;y+=6){putL(cx+1,y,[[0,0],[0,1],[0,-1],[-2,0],[-2,1],[-2,-1]])}});
 }
-const OUT_SOLID=new Set(["t","w","b","f","s"]);
+let LAMPS=[];
+const LCV=document.createElement("canvas"), LCX=LCV.getContext("2d");
+function lightSources(){
+  const L=LAMPS.map(l=>({x:l.tx*T+8,y:l.ty*T-16,r:58}));
+  decorList().forEach(d=>{if(d.kind==="lamp")L.push({x:d.tx*T+8,y:d.ty*T-7,r:50})});
+  plots.forEach(p=>{if(p.kind==="office"){const sl=p.slot;[[sl.x+1.2,sl.y+2.4],[sl.x+4.8,sl.y+2.4]].forEach(([a,b])=>L.push({x:a*T,y:b*T,r:16,win:true}))}});
+  return L;
+}
+function drawLighting(){
+  const dk=darkness(); if(dk<=0.01) return;
+  if(LCV.width!==cv.width||LCV.height!==cv.height){LCV.width=cv.width;LCV.height=cv.height}
+  const k=dk/.42, src=lightSources().filter(l=>l.x+l.r>CAM.x&&l.x-l.r<CAM.x+LW&&l.y+l.r>CAM.y&&l.y-l.r<CAM.y+LH);
+  LCX.setTransform(1,0,0,1,0,0); LCX.globalCompositeOperation="source-over"; LCX.clearRect(0,0,LCV.width,LCV.height);
+  LCX.fillStyle=`rgba(14,18,52,${Math.min(.6,dk*1.25).toFixed(3)})`; LCX.fillRect(0,0,LCV.width,LCV.height);
+  LCX.globalCompositeOperation="destination-out";
+  const hole=(x,y,r,a)=>{const X=(x-CAM.x)*S,Y=(y-CAM.y)*S,R2=r*S,g=LCX.createRadialGradient(X,Y,0,X,Y,R2);g.addColorStop(0,`rgba(0,0,0,${a})`);g.addColorStop(.55,`rgba(0,0,0,${a*.55})`);g.addColorStop(1,"rgba(0,0,0,0)");LCX.fillStyle=g;LCX.fillRect(X-R2,Y-R2,R2*2,R2*2)};
+  src.forEach(l=>hole(l.x,l.y+(l.win?0:14),l.r,l.win?.6:.95));
+  hole(P.x,P.y-8,22,.35);
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.drawImage(LCV,0,0);
+  ctx.globalCompositeOperation="lighter";
+  src.forEach(l=>{const X=(l.x-CAM.x)*S,Y=(l.y+(l.win?0:10)-CAM.y)*S,R2=(l.win?l.r*.8:l.r*.75)*S,g=ctx.createRadialGradient(X,Y,0,X,Y,R2);g.addColorStop(0,`rgba(255,196,110,${(l.win?.16:.22)*k})`);g.addColorStop(1,"rgba(255,196,110,0)");ctx.fillStyle=g;ctx.fillRect(X-R2,Y-R2,R2*2,R2*2)});
+  ctx.restore();
+}
+function drawStreetLamp(tx,ty){
+  const x=tx*T,y=ty*T,on=darkness()>0.08;
+  R(x+5,y+13,6,3,"rgba(0,0,0,.22)");
+  R(x+5,y+12,6,3,"#2b2f38"); R(x+6,y+11,4,1,"#3a3f4a");
+  R(x+7,y-10,2,22,"#2f343e"); R(x+7,y-10,1,22,"#4a505c");
+  R(x+3,y-13,10,2,"#2b2f38"); R(x+4,y-20,8,7,"#2b2f38");
+  R(x+5,y-19,6,5,on?"#ffe7a0":"#cfd6d9"); if(on){R(x+6,y-18,4,3,"#fff6d0")}
+  R(x+4,y-22,8,2,"#3a3f4a"); R(x+7,y-24,2,2,"#3a3f4a");
+}
+const OUT_SOLID=new Set(["t","w","b","f","s","l"]);
 function builderPos(){return {x:BLD.x,y:BLD.y}}
 
 /* ---------- interior ---------- */
@@ -1353,13 +1390,11 @@ function render(){
     OTHER_B.forEach(ob=>objs.push({y:ob.y,d:()=>drawBuilderAt(ob)}));
     othersHere().forEach(o=>objs.push({y:o.y,d:()=>drawPlayerAt(o,Object.assign({},DEFAULT_PLAYER,o.look||{},{name:(o.look&&o.look.name)||ownerName(o.login)}))}));
     decorList().forEach(d=>objs.push({y:d.ty*T+(d.kind==="flowers"?0:15),d:()=>drawDecor(d)}));
+    LAMPS.forEach(l=>objs.push({y:l.ty*T+15,d:()=>drawStreetLamp(l.tx,l.ty)}));
     objs.sort((a,b)=>a.y-b.y).forEach(o=>o.d());
     drawParts();
     ctx.setTransform(S,0,0,S,0,0);
-    {const dk=darkness(); if(dk>0.01)R(0,0,LW,LH,`rgba(20,24,70,${dk.toFixed(3)})`);}
-    ctx.setTransform(S,0,0,S,-CAM.x*S,-CAM.y*S);
-    decorList().forEach(d=>{if(d.kind==="lamp"&&isNight()){ctx.globalAlpha=.35;R(d.tx*T-6,d.ty*T-12,28,24,"#ffe28a");ctx.globalAlpha=1}});
-    ctx.setTransform(S,0,0,S,0,0);
+    drawLighting();
     weatherDraw();
   } else {
     CAM.x=0;CAM.y=0;
