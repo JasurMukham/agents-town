@@ -1227,29 +1227,35 @@ function applyData(){
 }
 /* ---------- presence: other players over a public MQTT relay (positions only) ---------- */
 let lastSent="", lastSentAt=0;
+const MQ_URLS=["wss://broker.emqx.io:8084/mqtt","wss://broker.hivemq.com:8884/mqtt","wss://test.mosquitto.org:8081/mqtt"];
+let MQS=[];
 function mqStart(){
   if(!window.mqtt||!ROOMKEY||MQ) return;
-  try{
-    MQ=mqtt.connect("wss://broker.emqx.io:8084/mqtt",{clientId:"at_"+Math.random().toString(16).slice(2),clean:true,reconnectPeriod:5000,connectTimeout:8000});
-    const topic="agentstown/"+ROOMKEY+"/pos";
-    MQ.on("connect",()=>MQ.subscribe(topic));
-    MQ.on("message",(t,m)=>{try{const d=JSON.parse(m.toString());if(!d.login||d.login===ME.login)return;const o=OTHERS[d.login]||{step:0};OTHERS[d.login]=Object.assign(o,d,{t:Date.now()})}catch(e){}});
-    setInterval(mqSend,200);
-  }catch(e){console.warn(e)}
+  MQ=true;
+  const topic="agentstown/"+ROOMKEY+"/pos";
+  MQ_URLS.forEach(u=>{try{
+    const c=mqtt.connect(u,{clientId:"at_"+Math.random().toString(16).slice(2),clean:true,reconnectPeriod:5000,connectTimeout:8000});
+    c.on("connect",()=>c.subscribe(topic));
+    c.on("message",(t,m)=>{try{const d=JSON.parse(m.toString());if(!d.login||d.login===ME.login)return;const o=OTHERS[d.login]||{step:0};if(d.ts&&o.ts&&d.ts<o.ts)return;OTHERS[d.login]=Object.assign(o,d,{t:Date.now()})}catch(e){}});
+    c.on("error",e=>console.warn("mqtt",u,e&&e.message));
+    MQS.push(c);
+  }catch(e){console.warn(e)}});
+  setInterval(mqSend,200);
 }
 function mqSend(){
-  if(!MQ||!MQ.connected||!ME.login) return;
+  const live=MQS.filter(c=>c.connected); if(!live.length||!ME.login) return;
   const off=curOffice();
   const d={login:ME.login,x:Math.round(P.x),y:Math.round(P.y),dir:P.dir,moving:P.moving,scene:off?off.id:"out",room:ROOM,look:PL(),sit:!!P.sit};
   const str=JSON.stringify(d); if(str===lastSent&&Date.now()-lastSentAt<3000) return;
-  lastSent=str; lastSentAt=Date.now(); MQ.publish("agentstown/"+ROOMKEY+"/pos",str);
+  lastSent=str; lastSentAt=Date.now(); d.ts=lastSentAt; const out=JSON.stringify(d);
+  live.forEach(c=>c.publish("agentstown/"+ROOMKEY+"/pos",out));
 }
 function othersHere(){
   const off=curOffice(), sc=off?off.id:"out", now=Date.now(), list=[];
   for(const o of Object.values(OTHERS)){ if(now-o.t>12000) continue; if(o.scene!==sc) continue; if(off&&o.room!==ROOM) continue; list.push(o) }
   return list;
 }
-function onlineText(){const now=Date.now(); const n=Object.values(OTHERS).filter(o=>now-o.t<12000).map(o=>ownerName(o.login)); document.getElementById("online").textContent=n.length?"Онлайн: "+n.join(", "):""}
+function onlineText(){const now=Date.now(); const n=Object.values(OTHERS).filter(o=>now-o.t<12000).map(o=>ownerName(o.login)); const ok=MQS.some(c=>c.connected); document.getElementById("online").textContent=(ok?"● связь есть":"○ нет связи с другими игроками")+(n.length?" · онлайн: "+n.join(", "):" · кроме тебя никого")}
 async function boot(){
   applyData();
   tick(); setInterval(tick,20000); setInterval(onlineText,3000);
