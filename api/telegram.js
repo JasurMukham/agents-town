@@ -52,13 +52,15 @@ function addressed(m, me) {
 }
 
 async function ask(messages) {
-  for (const model of MODELS) {
+  for (const model of MODELS) for (const fmtJson of [true, false]) {
     try {
       const r = await fetch("https://models.github.ai/inference/chat/completions", {
         method: "POST", headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages, temperature: 0.3, response_format: { type: "json_object" } }) });
-      if (!r.ok) { console.error("models", model, r.status, (await r.text()).slice(0, 300)); continue }
-      const j = await r.json(); return JSON.parse(j.choices[0].message.content);
+        body: JSON.stringify({ model, messages, temperature: 0.3, ...(fmtJson ? { response_format: { type: "json_object" } } : {}) }) });
+      if (!r.ok) { console.error("models", model, fmtJson, r.status, (await r.text()).slice(0, 300)); continue }
+      const j = await r.json(); const txt = j.choices[0].message.content || "";
+      const m = txt.match(/\{[\s\S]*\}/); if (!m) { console.error("models: no json", txt.slice(0, 200)); continue }
+      return JSON.parse(m[0]);
     } catch (e) { console.error("models", model, e.message) }
   }
   return null;
