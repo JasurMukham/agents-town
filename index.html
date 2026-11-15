@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Городок агентов</title>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+/* Layout: one pixel-art game screen (canvas) with HTML HUD, dialogue box and touch pad layered on top. Single warm theme by design. */
+:root{
+  --bg:#2a1f17;
+  --wood:#e9c98f;
+  --wood-dark:#8a5a2c;
+  --ink:#3a2414;
+  --accent:#f2b45a;
+  --ok:#3fae66;
+  --bad:#d8473a;
+  --pixel:"Press Start 2P", "PT Sans", monospace;
+  --game:"Press Start 2P", "PT Sans", monospace;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:#f4e6c8;font-family:var(--pixel);font-size:11px;line-height:1.7}
+.wrap{max-width:1080px;margin:0 auto;padding:14px 16px 24px;display:grid;gap:10px}
+.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+h1{margin:0;font:16px/1.4 var(--game);letter-spacing:0;color:#f6e3b8;text-shadow:2px 2px 0 #4a3020}
+.help{font-size:9px;line-height:2;color:#cdb48a}
+kbd{font-family:var(--pixel);background:#4a3626;border:1px solid #6b4d34;border-bottom-width:3px;border-radius:4px;padding:0 5px;color:#f4e6c8}
+.screen{position:relative;width:100%;aspect-ratio:352/240;border:4px solid var(--wood-dark);border-radius:6px;overflow:hidden;background:#000;box-shadow:0 0 0 4px #4a3020}
+canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;display:block}
+.hud{position:absolute;top:8px;right:8px;background:var(--wood);color:var(--ink);border:3px solid var(--wood-dark);border-radius:6px;padding:4px 10px;text-align:right;font-size:clamp(8px,1.1vw,11px);line-height:1.5;font-variant-numeric:tabular-nums}
+.hud b{display:block;font:clamp(10px,1.5vw,16px)/1.5 var(--game);margin-top:2px}
+.place{position:absolute;top:8px;left:8px;background:rgba(42,31,23,.85);border:2px solid var(--wood-dark);border-radius:6px;padding:6px 10px;font:clamp(8px,1.1vw,11px)/1.4 var(--game);color:#f6e3b8}
+.prompt{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:rgba(42,31,23,.85);border:2px solid var(--accent);border-radius:6px;padding:6px 10px;font-size:clamp(8px,1.1vw,11px);line-height:1.5;white-space:nowrap;display:none}
+.dialog{position:absolute;left:3%;right:3%;bottom:4%;min-height:34%;background:var(--wood);color:var(--ink);border:4px solid var(--wood-dark);border-radius:8px;box-shadow:inset 0 0 0 3px #f6e3b8;display:none;grid-template-columns:auto 1fr;gap:12px;padding:10px 12px;cursor:pointer}
+.dialog.show{display:grid}
+.portrait{width:clamp(56px,11vw,110px);aspect-ratio:1;background:#c99a5e;border:3px solid var(--wood-dark);border-radius:4px;image-rendering:pixelated;position:static}
+.dname{font:clamp(9px,1.3vw,13px)/1.5 var(--game);color:#5a3414;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tag{font:8px/1.4 var(--game);padding:1px 6px;border-radius:4px;color:#fff}
+.tag.ok{background:var(--ok)}.tag.bad{background:var(--bad)}.tag.idle{background:#7a7a7a}
+.dtext{font:clamp(9px,1.35vw,14px)/1.85 var(--game);margin-top:6px;min-height:5.6em;color:#4a2a12;text-shadow:1px 1px 0 rgba(255,240,205,.7)}
+.dnext{font-size:clamp(7px,0.9vw,9px);color:#7a5232;text-align:right}
+.pad{position:absolute;bottom:10px;left:10px;display:none;grid-template-columns:repeat(3,44px);grid-template-rows:repeat(3,44px);gap:2px;opacity:.85}
+.pad button,.abtn{appearance:none;border:2px solid var(--wood-dark);background:var(--wood);color:var(--ink);font:14px var(--pixel);border-radius:8px;touch-action:none;user-select:none;-webkit-user-select:none}
+.pad .u{grid-column:2;grid-row:1}.pad .l{grid-column:1;grid-row:2}.pad .r{grid-column:3;grid-row:2}.pad .d{grid-column:2;grid-row:3}
+.abtn{position:absolute;right:14px;bottom:24px;width:58px;height:58px;border-radius:50%;display:none}
+@media (pointer:coarse){.pad{display:grid}.abtn{display:block}}
+.say{display:none;gap:6px;margin-top:6px}
+.dialog.chat .say{display:flex}
+.say input{flex:1;min-width:0;font:clamp(9px,1.2vw,12px)/1.6 var(--game);padding:5px 8px;border:2px solid var(--wood-dark);border-radius:5px;background:#fff8e6;color:var(--ink)}
+.say button{font:clamp(8px,1.1vw,11px)/1 var(--game);padding:4px 10px;border:2px solid var(--wood-dark);border-radius:5px;background:var(--accent);color:var(--ink);cursor:pointer}
+.say button#sayclose{background:#e9c98f}
+.say input:focus-visible{outline:2px solid var(--accent)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.inbox{font-size:8px;line-height:1.4;background:#7a5232;color:#fff;padding:1px 6px;border-radius:4px}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:9px;line-height:2;color:#cdb48a}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block}
+.login{position:fixed;inset:0;background:rgba(20,14,10,.92);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.login.show{display:flex}
+.login form{background:var(--wood);color:var(--ink);border:4px solid var(--wood-dark);border-radius:8px;padding:18px;max-width:560px;display:grid;gap:10px;font:10px/1.8 var(--game)}
+.login h2{font:14px/1.5 var(--game);margin:0}
+.login input{font:10px var(--game);padding:8px;border:2px solid var(--wood-dark);border-radius:5px;background:#fff8e6;color:var(--ink)}
+.login button{font:11px var(--game);padding:8px;border:2px solid var(--wood-dark);border-radius:6px;background:var(--accent);color:var(--ink);cursor:pointer}
+.login a{color:#7a3a10}
+.login .err{color:#b0261c}
+.menu{display:none;flex-wrap:wrap;gap:6px;margin-top:8px}
+.menu.show{display:flex}
+.menu button,.menu select,.menu input{font:clamp(7px,1vw,10px)/1.4 var(--game);padding:5px 8px;border:2px solid var(--wood-dark);border-radius:5px;background:#fff8e6;color:var(--ink)}
+.menu button{background:var(--accent);cursor:pointer}
+.menu label{font:clamp(7px,1vw,10px)/1.6 var(--game);display:inline-flex;align-items:center;gap:4px}
+.menu input[type=color]{padding:0;width:34px;height:26px}
+.menu .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%}
+.menu .item{display:flex;gap:6px;align-items:center;width:100%;font:clamp(7px,1vw,10px)/1.6 var(--game)}
+.menu .item span{flex:1}
+.sitmenu{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:none;gap:6px;background:rgba(42,31,23,.9);border:2px solid var(--accent);border-radius:8px;padding:6px;flex-wrap:wrap;justify-content:center}
+.sitmenu.show{display:flex}
+.sitmenu button{font:clamp(8px,1.1vw,11px)/1.4 var(--game);padding:4px 10px;border:2px solid var(--wood-dark);border-radius:6px;background:var(--wood);color:var(--ink);cursor:pointer}
+.sitmenu button.on{background:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Городок агентов</h1>
+    <div class="help">Ходить: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> или стрелки · говорить: <kbd>E</kbd> / <kbd>Пробел</kbd> · на лавочке: сесть — <kbd>E</kbd> или клик, действия <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> · Строитель и агенты слушают тебя · в дверь — просто зайди</div>
+  </div>
+  <div class="screen" id="screen">
+    <canvas id="game" aria-label="Игровой экран: городок с офисами агентов"></canvas>
+    <div class="place" id="place">Городок</div>
+    <div class="hud" aria-live="polite"><span id="hday">Вс. 15</span><b id="htime">12:00</b></div>
+    <div class="prompt" id="prompt"></div>
+    <div class="dialog" id="dialog" role="dialog" aria-live="polite">
+      <canvas class="portrait" id="portrait" width="48" height="48"></canvas>
+      <div>
+        <div class="dname" id="dname"></div>
+        <div class="dtext" id="dtext"></div>
+        <div class="dnext" id="dnext">▼ дальше</div>
+        <form class="say" id="say" autocomplete="off">
+          <label for="sayin" class="vh">Что сказать</label>
+          <input id="sayin" type="text" maxlength="400" placeholder="Напиши, что сказать…">
+          <button type="submit" id="saybtn">Сказать</button>
+          <button type="button" id="sayclose" aria-label="Закрыть диалог">✕</button>
+        </form>
+        <div class="menu" id="menu"></div>
+      </div>
+    </div>
+    <div class="pad" id="pad">
+      <button class="u" data-k="up" aria-label="Вверх">▲</button>
+      <button class="l" data-k="left" aria-label="Влево">◀</button>
+      <button class="r" data-k="right" aria-label="Вправо">▶</button>
+      <button class="d" data-k="down" aria-label="Вниз">▼</button>
+    </div>
+    <button class="abtn" id="abtn" aria-label="Говорить">E</button>
+    <div class="sitmenu" id="sitmenu" role="toolbar" aria-label="Что делать на лавочке">
+      <button type="button" data-a="smoke">1 · Курить</button>
+      <button type="button" data-a="pizza">2 · Пицца</button>
+      <button type="button" data-a="cola">3 · Кола</button>
+      <button type="button" data-a="up">Встать</button>
+    </div>
+  </div>
+  <div class="legend">
+    <span><i class="sw" style="background:#3fae66"></i>последняя смена прошла хорошо</span>
+    <span><i class="sw" style="background:#d8473a"></i>ошибка — «!» над головой</span>
+    <span><i class="sw" style="background:#7a7a7a"></i>спит, ждёт твоей команды</span>
+    <span><i class="sw" style="background:#c9a46a"></i>на паузе — пустой стул</span>
+    <span id="chatnote"></span>
+    <span id="online"></span>
+    <a href="#" id="logout" style="color:#cdb48a">выйти</a>
+    <span id="upd">Обновлено: —</span>
+  </div>
+</div>
+
+<div class="login" id="login">
+  <form id="loginform" autocomplete="off">
+    <h2>Вход в городок</h2>
+    <div>Нужен личный токен GitHub с доступом к репозиторию данных городка. Создай его один раз: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com → Fine-grained token</a>. Repository access: только репозиторий данных; Permissions → Contents: Read and write. Токен хранится только в этом браузере.</div>
+    <label for="lrepo">Репозиторий данных</label>
+    <input id="lrepo" value="JasurMukham/agents-town-data">
+    <label for="ltoken">Токен</label>
+    <input id="ltoken" type="password" placeholder="github_pat_…">
+    <div class="err" id="lerr"></div>
+    <button type="submit">Войти</button>
+  </form>
+</div>
+<script>
+/* ================= DATA (data.json, kept up to date by the Builder agent) ================= */
+let OFFICES=[], BUILDER=null, UPDATED=null;
+let ME={login:""}, OWNERS={}, PLAYERS={}, OTHER_B=[], ROOMKEY=null, MQ=null, CAM={x:0,y:0};
+const OTHERS={};
+function ownerName(login){const o=OWNERS[login];return (o&&o.display_name)||login}
+const DESKS=[[2,4],[7,4],[12,4],[2,7],[7,7],[12,7]];
+const DAYS=["Вс","Пн","Вт","Ср","Чт","Пт","Сб"];
+const FALLBACK={"offices":[]};
+const STATUS_TAG={ok:"всё ок",bad:"ошибка",idle:"ждёт команды",off:"на паузе",work:"работает"};
+
+/* ================= GITHUB STORE =================
+   The town's data lives as JSON files in a private GitHub repo.
+   This adapter mimics the small db API the game uses (doc/collection, set/update/get/onSnapshot/add),
+   polling the repo every few seconds and committing through the Contents API. */
+const GH={token:"",repo:"",files:{},tree:{},head:null,subs:[],busy:false,me:null};
+function b64e(str){const b=new TextEncoder().encode(str);let s="";b.forEach(c=>s+=String.fromCharCode(c));return btoa(s)}
+function b64d(b64){const s=atob(b64.replace(/\n/g,""));const a=new Uint8Array(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);return new TextDecoder().decode(a)}
+async function ghApi(path,opts={}){
+  const r=await fetch("https://api.github.com"+path,{...opts,cache:"no-store",headers:{Authorization:"Bearer "+GH.token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",...(opts.headers||{})}});
+  if(!r.ok){const e=new Error("GitHub "+r.status);e.status=r.status;try{e.body=await r.json()}catch(_){}throw e}
+  return r.status===204?null:r.json();
+}
+async function ghPoll(force){
+  if(GH.busy) return; GH.busy=true;
+  try{
+    let head=null;
+    try{ const ref=await ghApi(`/repos/${GH.repo}/git/ref/heads/main`); head=ref.object.sha; }
+    catch(e){ if(e.status===404||e.status===409){ head=null; } else throw e; }
+    if(!force&&head===GH.head){GH.busy=false;return}
+    GH.head=head;
+    const tree={};
+    if(head){ const c=await ghApi(`/repos/${GH.repo}/git/commits/${head}`); const t=await ghApi(`/repos/${GH.repo}/git/trees/${c.tree.sha}?recursive=1`); t.tree.forEach(n=>{if(n.type==="blob"&&n.path.endsWith(".json"))tree[n.path]=n.sha}); }
+    const need=Object.keys(tree).filter(p=>GH.tree[p]!==tree[p]);
+    await Promise.all(need.map(async p=>{ try{ const b=await ghApi(`/repos/${GH.repo}/git/blobs/${tree[p]}`); GH.files[p]=JSON.parse(b64d(b.content)); }catch(e){} }));
+    Object.keys(GH.files).forEach(p=>{if(!(p in tree))delete GH.files[p]});
+    GH.tree=tree; ghNotify();
+  }catch(e){ console.warn(e) }
+  GH.busy=false;
+}
+function ghNotify(){GH.subs.forEach(s=>{try{s()}catch(e){console.warn(e)}})}
+async function ghPut(path,data,msg){
+  for(let attempt=0;attempt<3;attempt++){
+    let sha=GH.tree[path];
+    try{
+      const res=await ghApi(`/repos/${GH.repo}/contents/${encodeURI(path)}`,{method:"PUT",body:JSON.stringify({message:msg||("Городок: "+path),content:b64e(JSON.stringify(data,null,1)),...(sha?{sha}:{})})});
+      GH.tree[path]=res.content.sha; GH.files[path]=clone(data); if(res.commit&&res.commit.sha)GH.head=res.commit.sha; ghNotify(); return true;
+    }catch(e){
+      if(e.status===409||e.status===422){ try{ const cur=await ghApi(`/repos/${GH.repo}/contents/${encodeURI(path)}`); GH.tree[path]=cur.sha; }catch(e2){ if(e2.status===404) delete GH.tree[path]; } continue; }
+      console.warn(e); return false;
+    }
+  }
+  return false;
+}
+async function ghDelete(path){const sha=GH.tree[path]; if(!sha) return true; try{await ghApi(`/repos/${GH.repo}/contents/${encodeURI(path)}`,{method:"DELETE",body:JSON.stringify({message:"Городок: убрать "+path,sha})});delete GH.tree[path];delete GH.files[path];ghNotify();return true}catch(e){return false}}
+const ghDB={
+  doc(path){
+    const f=path+".json";
+    return {
+      async get(){const d=GH.files[f];return {exists:d!==undefined,data:()=>clone(d)}},
+      async set(d){if(!await ghPut(f,d)) throw {code:"unavailable"}},
+      async update(d){const cur=GH.files[f]; if(cur===undefined) throw {code:"invalid_argument"}; if(!await ghPut(f,deepMerge(cur,d))) throw {code:"unavailable"}},
+      async delete(){await ghDelete(f)},
+      onSnapshot(fn){const run=()=>{const d=GH.files[f];fn({exists:d!==undefined,data:()=>clone(d)})};GH.subs.push(run);run();return()=>{}}
+    };
+  },
+  collection(c){
+    const pre=c+"/";
+    return {
+      async add(d){const id=Date.now().toString(36)+Math.random().toString(36).slice(2,6);if(!await ghPut(pre+id+".json",d)) throw {code:"unavailable"};return {id}},
+      onSnapshot(fn){const run=()=>{const docs=Object.keys(GH.files).filter(p=>p.startsWith(pre)&&!p.slice(pre.length).includes("/")).map(p=>({id:p.slice(pre.length,-5),data:()=>clone(GH.files[p])}));fn({docs})};GH.subs.push(run);run();return()=>{}}
+    };
+  }
+};
+
+/* ================= ENGINE ================= */
+const T=16, LW=352, LH=240, S=3;
+const cv=document.getElementById("game"), ctx=cv.getContext("2d");
+cv.width=LW*S; cv.height=LH*S;
+const R=(x,y,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h)};
+function hash(x,y){let n=(x*374761393+y*668265263)|0;n=Math.imul(n^(n>>>13),1274126177);return ((n^(n>>>16))>>>0)/4294967295}
+
+/* ---------- outdoor map: 12 building plots, roads, pond; built from all owners' offices ---------- */
+const OW=44, OH=27;
+const SLOTS=[]; [2,10,18].forEach(y=>[3,14,25,36].forEach(x=>SLOTS.push({x,y,sx:x+6,sy:y+4})));
+let out, doorOf, plots, siteSlot, signs;
+function buildMap(){
+  out=[...Array(OH)].map(()=>Array(OW).fill("g"));
+  doorOf=[...Array(OH)].map(()=>Array(OW).fill(-1));
+  for(let x=0;x<OW;x++){out[0][x]="t";out[OH-1][x]="t"}
+  for(let y=0;y<OH;y++){out[y][0]="t";out[y][OW-1]="t"}
+  [8,16,24].forEach(ry=>{for(let x=2;x<=41;x++)out[ry][x]="p"});
+  [11,22,33].forEach(cx=>{for(let y=8;y<=24;y++)out[y][cx]="p"});
+  SLOTS.forEach(sl=>{for(let y=sl.y+4;y<=sl.y+5;y++){out[y][sl.x+2]="p";out[y][sl.x+3]="p"}});
+  for(let y=11;y<=13;y++)for(let x=23;x<=24;x++)out[y][x]="w";
+  plots=[]; signs=[]; siteSlot=null;
+  SLOTS.forEach((sl,i)=>{
+    const off=OFFICES[i];
+    if(off){
+      for(let y=sl.y;y<sl.y+4;y++)for(let x=sl.x;x<sl.x+6;x++)out[y][x]=y<sl.y+2?"r":"b";
+      out[sl.y+3][sl.x+2]="d";out[sl.y+3][sl.x+3]="d";doorOf[sl.y+3][sl.x+2]=i;doorOf[sl.y+3][sl.x+3]=i;
+      plots.push({kind:"office",slot:sl,office:off,idx:i});
+      const who=(off.owners||[]).map(ownerName).join(" и ");
+      out[sl.sy][sl.sx]="s"; signs.push({tx:sl.sx,ty:sl.sy,obj:{name:off.name,lines:[`${off.name}. Хозяин: ${who||"—"}. Агентов: ${off.agents.length}${(off.rooms&&off.rooms.length>1)?`, комнат: ${off.rooms.length}`:""}. Заходи!`]},color:"#e9c98f",label:"прочитать вывеску"});
+    } else if(siteSlot===null){
+      siteSlot=sl;
+      for(let y=sl.y;y<sl.y+4;y++)for(let x=sl.x;x<sl.x+6;x++)out[y][x]="f";
+      plots.push({kind:"site",slot:sl});
+      out[sl.sy][sl.sx]="s"; signs.push({tx:sl.sx,ty:sl.sy,obj:{name:"Табличка",lines:["Участок под новый офис.","Когда у кого-то из вас появится новый проект, Строитель поставит здесь здание."]},color:"#f2b45a",label:"прочитать табличку"});
+    }
+  });
+  // trees in open grass, away from roads and buildings
+  for(let y=1;y<OH-1;y++)for(let x=1;x<OW-1;x++){
+    if(out[y][x]!=="g"||hash(x+7,y+3)<0.955) continue;
+    let ok=true; for(let dy=-1;dy<=1&&ok;dy++)for(let dx=-1;dx<=1;dx++){const c=out[y+dy][x+dx];if(c!=="g"&&c!=="t"){ok=false;break}}
+    if(ok&&!(y+1<OH&&out[y+1][x]==="s")) out[y][x]="t";
+  }
+}
+const OUT_SOLID=new Set(["t","w","b","f","s"]);
+function builderPos(){return {x:BLD.x,y:BLD.y}}
+
+/* ---------- interior ---------- */
+const IW=16, IH=11, IOX=(LW-IW*T)/2, IOY=(LH-IH*T)/2;
+let ROOM=0;
+function curOffice(){return typeof scene==="number"?OFFICES[scene]:null}
+function roomsOf(off){return (off&&off.rooms&&off.rooms.length)?off.rooms:[{id:"main",name:""}]}
+function curRoom(){const rs=roomsOf(curOffice());return rs[Math.min(ROOM,rs.length-1)]}
+function curAgents(){const off=curOffice(); if(!off) return []; const rs=roomsOf(off), r=curRoom(); return off.agents.filter(a=>(a.room||rs[0].id)===r.id).slice(0,6)}
+function inSolid(tx,ty){
+  if(ty<=1) return true;
+  const nR=roomsOf(curOffice()).length;
+  if(tx<=0) return !(tx===0&&ROOM>0&&(ty===5||ty===6));
+  if(tx>=IW-1) return !(tx===IW-1&&ROOM<nR-1&&(ty===5||ty===6));
+  if(ty>=IH-1) return !(tx===7||tx===8);
+  if((tx===1&&ty===2)||(tx===14&&ty===2)) return true;
+  for(let i=0;i<curAgents().length;i++){const [dx,dy]=DESKS[i]; if(ty===dy&&tx>=dx&&tx<=dx+2) return true; if(ty===dy-1&&tx===dx+1) return true;}
+  return false;
+}
+
+/* ---------- state ---------- */
+const P={x:10*T,y:10.8*T,dir:"down",step:0,moving:false};
+let scene="out", fade=0, fadeTo=null, frame=0, lastDoor=0;
+const keys={};
+const KM={ArrowUp:"up",KeyW:"up",ArrowDown:"down",KeyS:"down",ArrowLeft:"left",KeyA:"left",ArrowRight:"right",KeyD:"right"};
+const typing=()=>{const a=document.activeElement;return !!a&&(a.tagName==="INPUT"||a.tagName==="SELECT"||a.tagName==="TEXTAREA")};
+addEventListener("keydown",e=>{
+  if(e.code==="Escape"&&dlg.open){closeDlg();return}
+  if(typing()) return;
+  if(KM[e.code]){keys[KM[e.code]]=true;e.preventDefault()}
+  if(P.sit&&!dlg.open){const m={Digit1:"smoke",Digit2:"pizza",Digit3:"cola",Numpad1:"smoke",Numpad2:"pizza",Numpad3:"cola"}[e.code];if(m){e.preventDefault();sitAct(m);return}}
+  if(e.code==="KeyE"||e.code==="Space"||e.code==="Enter"){e.preventDefault();act()}
+});
+addEventListener("keyup",e=>{if(KM[e.code])keys[KM[e.code]]=false});
+document.querySelectorAll(".pad button").forEach(b=>{
+  const k=b.dataset.k;
+  b.addEventListener("pointerdown",e=>{e.preventDefault();keys[k]=true});
+  ["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false));
+});
+document.getElementById("abtn").addEventListener("pointerdown",e=>{e.preventDefault();act()});
+
+function solidAt(px,py){
+  if(scene==="out"){
+    const tx=Math.floor(px/T), ty=Math.floor(py/T);
+    if(tx<0||ty<0||tx>=OW||ty>=OH) return true;
+    if(OUT_SOLID.has(out[ty][tx])) return true;
+    const dd=decorAt(tx,ty); if(dd&&DECOR_SOLID.has(dd.kind)) return true;
+    const b=builderPos(); if(!BLD.hidden&&!JOB&&Math.abs(px-b.x)<6&&py>b.y-6&&py<b.y+1) return true;
+    return false;
+  } else {
+    const tx=Math.floor((px-IOX)/T), ty=Math.floor((py-IOY)/T);
+    if(tx<0||ty<0||tx>=IW||ty>=IH) return true;
+    return inSolid(tx,ty);
+  }
+}
+function blocked(x,y){return solidAt(x-5,y-5)||solidAt(x+5,y-5)||solidAt(x-5,y)||solidAt(x+5,y)}
+
+/* ---------- benches: sit, smoke, pizza, cola ---------- */
+const $sit=document.getElementById("sitmenu");
+const SIT_MS=6400;
+$sit.addEventListener("click",e=>{const b=e.target.closest("button");if(b)sitAct(b.dataset.a)});
+function updSitMenu(){$sit.querySelectorAll("button").forEach(b=>b.classList.toggle("on",!!(P.sit&&P.sit.act===b.dataset.a)))}
+function sitOn(d){
+  P.sit={d,act:null,t:0,ox:P.x,oy:P.y};
+  P.x=(d.tx+.5)*T; P.y=d.ty*T+15; P.dir="down"; P.moving=false;
+  $sit.classList.add("show"); $pr.style.display="none"; updSitMenu();
+}
+function standUp(){
+  if(!P.sit) return; const d=P.sit.d, o={x:P.sit.ox,y:P.sit.oy}; P.sit=null;
+  $sit.classList.remove("show"); updSitMenu();
+  const c=[[(d.tx+.5)*T,(d.ty+1)*T+12],[(d.tx+.5)*T,d.ty*T-2],[(d.tx-.5)*T,d.ty*T+12],[(d.tx+1.5)*T,d.ty*T+12],[o.x,o.y]];
+  for(const [x,y] of c){if(!blocked(x,y)){P.x=x;P.y=y;return}}
+  P.x=o.x;P.y=o.y;
+}
+function sitAct(a){if(!P.sit)return;if(a==="up"){standUp();return}P.sit.act=P.sit.act===a?null:a;P.sit.t=0;updSitMenu()}
+function heldPos(){const x=Math.round(P.x),y=Math.round(P.y),ph=(P.sit.t%1600)/1600,up=ph>0.5&&ph<0.85;return {x,y,up,hx:up?x+2:x+6,hy:up?y-14:y-8}}
+function sitUpdate(dt){
+  const s=P.sit; if(!s.act) return; s.t+=dt; const h=heldPos();
+  if(s.act==="smoke"){if(Math.random()<dt/90)PARTS.push({x:h.hx+5,y:h.hy-2,vx:(Math.random()-.3)*0.012,vy:-0.014,life:1500,age:0,c:"#e6e6e6",kind:"smoke",s:1.2});
+    if(!h.up&&(s.t%1600)>850&&(s.t%1600)<850+dt)for(let i=0;i<4;i++)PARTS.push({x:h.x+1,y:h.y-14,vx:0.01+Math.random()*0.02,vy:-0.01-Math.random()*0.01,life:1600,age:0,c:"#f0f0f0",kind:"smoke",s:2});}
+  if(s.act==="pizza"&&h.up&&Math.random()<dt/220)PARTS.push({x:h.x+Math.random()*3,y:h.y-13,vx:(Math.random()-.5)*0.02,vy:0.02,life:500,age:0,c:"#e0a040",kind:"dot",s:1});
+  if(s.act==="cola"&&Math.random()<dt/260)PARTS.push({x:h.hx+2,y:h.hy-6,vx:0,vy:-0.015,life:500,age:0,c:"#ffffff",kind:"dot",s:1});
+  if(s.t>=SIT_MS){s.act=null;s.t=0;updSitMenu()}
+}
+function drawHeld(){
+  const s=P.sit; if(!s||!s.act) return; const L=PL(), h=heldPos(), x=h.x, y=h.y, hx=h.hx, hy=h.hy;
+  R(x+5,y-11,2,3,L.top_color); R(hx,hy,2,2,L.skin);
+  if(s.act==="smoke"){R(hx+1,hy-1,4,1,"#f4f1e8");R(hx+5,hy-1,1,1,((frame>>3)%2)?"#ff7a3a":"#d8473a")}
+  if(s.act==="pizza"){const b=Math.min(3,Math.floor(s.t/1600)), w=7-b*2; if(w>0){R(hx+1,hy-5,w,2,"#c98a3a");R(hx+1,hy-3,Math.max(1,w-1),2,"#f2c94c");R(hx+1,hy-1,Math.max(1,w-3),1,"#f2c94c");if(w>3)R(hx+2,hy-3,1,1,"#c9363c")}}
+  if(s.act==="cola"){R(hx+1,hy-6,3,6,"#d8262c");R(hx+1,hy-6,3,1,"#c4ccd2");R(hx+1,hy-3,3,1,"#ffffff")}
+}
+function benchAtTile(tx,ty){return decorList().find(d=>d.kind==="bench"&&d.tx===tx&&d.ty===ty)}
+cv.addEventListener("click",e=>{
+  if(scene!=="out"||dlg.open||JOB||fadeTo!==null) return;
+  const r=cv.getBoundingClientRect(), lx=(e.clientX-r.left)/r.width*LW+CAM.x, ly=(e.clientY-r.top)/r.height*LH+CAM.y;
+  const d=benchAtTile(Math.floor(lx/T),Math.floor(ly/T)); if(!d||(P.sit&&P.sit.d===d)) return;
+  const px=P.sit?P.sit.ox:P.x, py=P.sit?P.sit.oy:P.y;
+  if(Math.hypot((d.tx+.5)*T-px,d.ty*T+10-py)<60){if(P.sit)standUp();sitOn(d)}
+  else PARTS.push({x:(d.tx+.5)*T,y:d.ty*T,vx:0,vy:-0.02,life:900,age:0,c:"#fff",kind:"text",t:"подойди ближе"});
+});
+
+/* ---------- interactables ---------- */
+function boardObj(off){
+  const order=[1,2,3,4,5,6,0];
+  const weekly=off.agents.filter(a=>a.day!==null&&a.day!==undefined).sort((a,b)=>order.indexOf(a.day)-order.indexOf(b.day)||String(a.time).localeCompare(String(b.time)));
+  const other=off.agents.filter(a=>a.day===null||a.day===undefined);
+  const lines=[];
+  for(let i=0;i<weekly.length;i+=2) lines.push(weekly.slice(i,i+2).map(a=>`${DAYS[a.day]} ${a.time} — ${a.name}`).join(". ")+".");
+  if(other.length) lines.push(other.map(a=>`${a.name}: ${a.sched}`).join(". ")+".");
+  if(!lines.length) lines.push("Смен пока нет.");
+  return {name:"Доска смен",lines};
+}
+function interactables(){
+  if(scene==="out"){
+    const list=signs.map(s=>({x:(s.tx+.5)*T,y:(s.ty+.5)*T,obj:s.obj,label:s.label}));
+    const b=builderPos(); if(BUILDER&&!JOB&&!BLD.hidden) list.push({x:b.x,y:b.y-6,obj:{...BUILDER,builder:true,mine:true},label:"поговорить: твой Строитель"});
+    OTHER_B.forEach(ob=>list.push({x:ob.x,y:ob.y-6,obj:{...ob.data,builder:true,mine:false},label:"поговорить: "+ob.data.name}));
+    decorList().forEach(d=>{if(d.kind==="bench")list.push({x:(d.tx+.5)*T,y:d.ty*T+10,obj:{bench:d,lines:[]},label:"сесть на лавочку"})});
+    return list;
+  }
+  const off=OFFICES[scene];
+  const list=curAgents().map((a,i)=>({x:IOX+(DESKS[i][0]+1.5)*T,y:IOY+(DESKS[i][1]+0.5)*T,obj:Object.assign({},a,{st:liveSt(a),lines:(liveSt(a)==="work"?[a.lines[0]]:a.lines.slice(0,2)).concat(reportLines(a))}),label:"поговорить: "+a.name}));
+  list.push({x:IOX+8*T,y:IOY+2*T,obj:boardObj(off),label:"посмотреть доску смен"});
+  return list;
+}
+function nearest(){
+  let best=null,bd=26;
+  for(const it of interactables()){const d=Math.hypot(it.x-P.x,it.y-(P.y-6));if(d<bd){bd=d;best=it}}
+  return best;
+}
+
+/* ---------- dialogue + chat ---------- */
+const dlg={open:false,obj:null,i:0,shown:0,chat:false,busy:false,hist:[]};
+const $d=document.getElementById("dialog"),$dn=document.getElementById("dname"),$dt=document.getElementById("dtext"),$pr=document.getElementById("prompt");
+const $say=document.getElementById("say"),$in=document.getElementById("sayin");
+const pctx=document.getElementById("portrait").getContext("2d");
+const chatHist={};
+$d.addEventListener("click",e=>{if(e.target.closest("#say"))return;act()});
+document.getElementById("sayclose").addEventListener("click",closeDlg);
+$say.addEventListener("submit",e=>{e.preventDefault();sendChat()});
+function canChat(o){return !!(SAMPLE&&(o.builder||o.id))}
+function closeDlg(){dlg.open=false;$d.classList.remove("show","chat");$in.blur();if(typeof hideMenu==="function")hideMenu()}
+function curLines(){return dlg.reply?[dlg.reply]:dlg.obj.lines}
+function act(){
+  if(JOB&&!dlg.open) return;
+  if(dlg.open){
+    if(dlg.busy) return;
+    const lines=curLines(), line=lines[dlg.i];
+    if(dlg.shown<line.length){dlg.shown=line.length;return}
+    if(dlg.i<lines.length-1){dlg.i++;dlg.shown=0;return}
+    if(dlg.chat){$in.focus();return}
+    if($menu.classList.contains("show")) return;
+    closeDlg(); return;
+  }
+  if(P.sit) return;
+  const n=nearest(); if(n&&n.obj.bench){sitOn(n.obj.bench);return}
+  if(!n||!n.obj.lines||!n.obj.lines.length) return;
+  openDlg(n.obj);
+}
+function renderName(){
+  const o=dlg.obj, st=o.st;
+  $dn.innerHTML=""; $dn.append(o.name);
+  if(st){const t=document.createElement("span");t.className="tag "+(st==="off"?"idle":st);t.textContent=STATUS_TAG[st]||st;$dn.append(" ",t)}
+  const key=o.builder?"builder":o.id;
+  const k=INBOX.filter(x=>x.agent_id===key&&(x.status==="active"||x.status==="new")).length;
+  if(k){const t=document.createElement("span");t.className="inbox";t.textContent="поручений: "+k;$dn.append(" ",t)}
+}
+function say(text){dlg.reply=text;dlg.i=0;dlg.shown=0}
+const BUILDER_LOOK={shirt:"#e0b030",hair:"#5a3a22",skin:"#e8b48a"};
+function drawPortrait(o){
+  pctx.clearRect(0,0,48,48);
+  pctx.fillStyle="#c99a5e";pctx.fillRect(0,0,48,48);
+  const r=(x,y,w,h,c)=>{pctx.fillStyle=c;pctx.fillRect(x,y,w,h)};
+  const L=o.builder?BUILDER_LOOK:(o.look?ALOOK(o):null);
+  if(!L){
+    r(8,10,32,26,"#8a5a2c"); r(10,12,28,22,"#e9c98f");
+    for(let i=0;i<4;i++) r(13,15+i*5,22-(i%2)*6,2,"#7a5232");
+    r(22,36,4,8,"#6b4423"); return;
+  }
+  r(10,34,28,14,L.shirt); r(21,34,6,4,L.skin);
+  r(13,10,22,24,L.skin);
+  if(o.builder){r(10,4,28,8,"#f2c230");r(8,10,32,3,"#d9a820");r(22,2,4,3,"#f2c230")}
+  else {r(11,6,26,8,L.hair); r(11,10,4,12,L.hair); r(33,10,4,8,L.hair)}
+  if(o.st==="idle"||o.st==="off"){r(17,21,5,2,"#2a1a10");r(26,21,5,2,"#2a1a10")}
+  else {r(18,19,3,4,"#1a1010");r(27,19,3,4,"#1a1010");r(18,19,1,1,"#fff");r(27,19,1,1,"#fff")}
+  r(15,25,3,2,"rgba(220,100,90,.35)"); r(30,25,3,2,"rgba(220,100,90,.35)");
+  if(o.st==="bad"){r(21,29,6,2,"#7a3a2a");r(20,30,1,1,"#7a3a2a");r(27,30,1,1,"#7a3a2a")}
+  else {r(20,28,8,2,"#8a3a2a");r(21,30,6,1,"#8a3a2a")}
+}
+
+/* ---------- dialog menus: Builder actions and agent orders (no chat model on the website) ---------- */
+const $menu=document.getElementById("menu");
+const OPT=(arr,cur)=>arr.map(([v,t])=>`<option value="${v}"${String(v)===String(cur)?" selected":""}>${t}</option>`).join("");
+const esc=t=>String(t==null?"":t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function openDlg(obj,reply){
+  dlg.open=true;dlg.obj=obj;dlg.reply=reply||null;dlg.i=0;dlg.shown=0;dlg.chat=false;
+  renderName(); drawPortrait(obj); $d.classList.add("show"); $d.classList.remove("chat"); showMenu(obj);
+}
+function hideMenu(){$menu.classList.remove("show");$menu.innerHTML=""}
+function showMenu(o){
+  hideMenu();
+  if(o.builder&&o.mine) return builderMenu();
+  if(o.id&&o.owner===ME.login&&o.look) return agentMenu(o);
+}
+$menu.addEventListener("click",e=>e.stopPropagation());
+$menu.addEventListener("keydown",e=>e.stopPropagation());
+function menuBtns(btns){
+  $menu.innerHTML=btns.map(([k,t])=>`<button type="button" data-k="${k}">${t}</button>`).join("");
+  $menu.classList.add("show");
+  $menu.querySelectorAll("button").forEach(b=>b.onclick=()=>MENU_ACT[b.dataset.k]());
+}
+function builderMenu(){
+  menuBtns([["paint","Перекрасить здание"],["dress","Переодеться"],["build","Построить"],["remove","Убрать рядом"],["world","Скорость и погода"],["order","Заказ (сделаю на обходе)"]]);
+}
+function form(html,onOk){
+  $menu.innerHTML=`<div class="row">${html}</div><div class="row"><button type="button" id="mok">Сделать</button><button type="button" id="mback">← Назад</button></div>`;
+  $menu.classList.add("show");
+  document.getElementById("mback").onclick=builderMenu;
+  document.getElementById("mok").onclick=()=>{const v={};$menu.querySelectorAll("[name]").forEach(el=>{v[el.name]=el.type==="checkbox"?el.checked:el.value});onOk(v)};
+}
+async function runBuilder(name,inp){
+  const t=builderTools().find(x=>x.name===name); if(!t) return;
+  hideMenu(); dlg.busy=true; $dt.textContent="…";
+  let r; try{ r=await t.execute(inp) }catch(e){ r="ОШИБКА: "+(e&&e.message||"не получилось") }
+  dlg.busy=false;
+  if(ANIMQ.length) await playAnims();
+  openDlg(Object.assign({},BUILDER,{builder:true,mine:true}), String(r).startsWith("ОШИБКА")?r:"Готово! "+r.replace(/^готово,?\s*/i,"").replace(/^./,c=>c.toUpperCase()));
+}
+const MENU_ACT={
+  paint(){
+    const mine=OFFICES.filter(o=>o.owners.includes(ME.login)); if(!mine.length){say("У тебя пока нет зданий.");return}
+    const st=OST(mine[0].id);
+    form(`<label>Здание <select name="office_id">${OPT(mine.map(o=>[o.id,o.name]),mine[0].id)}</select></label>
+      <label>Крыша <input type="color" name="roof" value="${st.roof||mine[0].roof||"#b8473a"}"></label>
+      <label>Стены <input type="color" name="wall" value="${st.wall||"#e8dcc0"}"></label>
+      <label>Вывеска <input type="color" name="sign" value="${st.sign||"#f2b45a"}"></label>
+      <label>Текст <input type="color" name="sign_text" value="${st.sign_text||"#3a2414"}"></label>
+      <label>Надпись <input name="label" maxlength="9" size="9" value="${esc(st.label||mine[0].short||"")}"></label>
+      <label>Пол <input type="color" name="floor" value="${st.floor||"#b07a48"}"></label>
+      <label>Стены внутри <input type="color" name="interior_wall" value="${st.interior_wall||"#6b8fa8"}"></label>`,
+      v=>runBuilder("set_office_style",v));
+  },
+  dress(){
+    const L=PL();
+    form(`<label>Шапка <select name="hat">${OPT([["none","нет"],["beanie","шапка"],["cap","кепка"],["cap_back","кепка назад"],["straw","соломенная"],["bandana","бандана"]],L.hat)}</select></label>
+      <input type="color" name="hat_color" value="${L.hat_color}" aria-label="Цвет шапки">
+      <label>Волосы <select name="hair_style">${OPT([["short","короткие"],["side","набок"],["long","длинные"],["bun","пучок"],["curly","кудри"],["mohawk","ирокез"],["bald","лысый"]],L.hair_style)}</select></label>
+      <input type="color" name="hair_color" value="${L.hair_color}" aria-label="Цвет волос">
+      <label>Верх <select name="top">${OPT([["tshirt","футболка"],["hoodie","худи"],["jacket","куртка"],["shirt","рубашка"],["suit","костюм"]],L.top)}</select></label>
+      <input type="color" name="top_color" value="${L.top_color}" aria-label="Цвет верха">
+      <label>Штаны <input type="color" name="pants_color" value="${L.pants_color}"></label>
+      <label>Обувь <input type="color" name="shoes_color" value="${L.shoes_color}"></label>
+      <label>Кожа <input type="color" name="skin" value="${L.skin}"></label>
+      <label><input type="checkbox" name="glasses"${L.glasses?" checked":""}> очки</label>
+      <label><input type="checkbox" name="beard"${L.beard?" checked":""}> борода</label>
+      <label>Имя <input name="name" maxlength="16" size="10" value="${esc(L.name||"")}"></label>`,
+      v=>runBuilder("set_player_look",v));
+  },
+  build(){
+    form(`<label>Что <select name="kind">${OPT([["tree","дерево"],["bush","куст"],["flowers","цветы"],["bench","лавочка"],["lamp","фонарь"],["fountain","фонтан"],["statue","статуя"],["rock","камень"],["well","колодец"],["cart","тележка"]],"tree")}</select></label>
+      <label>Сколько <select name="count">${OPT([[1,1],[2,2],[3,3],[4,4],[6,6]],1)}</select></label>
+      <label>Где <select name="near">${OPT([["player","рядом со мной"],["center","в центре"],["pond","у пруда"]].concat(OFFICES.map(o=>[o.id,"у здания «"+o.name+"»"])),"player")}</select></label>`,
+      v=>runBuilder("build_decoration",{kind:v.kind,count:+v.count,near:v.near}));
+  },
+  remove(){
+    form(`<label>Что <select name="kind">${OPT([["all","любое"],["tree","дерево"],["bush","куст"],["flowers","цветы"],["bench","лавочка"],["lamp","фонарь"],["fountain","фонтан"],["statue","статуя"],["rock","камень"],["well","колодец"],["cart","тележка"]],"all")}</select></label>
+      <label>Сколько <select name="count">${OPT([["1","1"],["3","3"],["all","все рядом"]],"1")}</select></label>`,
+      v=>runBuilder("remove_decoration",{kind:v.kind,count:v.count,near:"player"}));
+  },
+  world(){
+    const st=Object.assign({},STYLE.settings||{}), g=STYLE.ground||{};
+    form(`<label>Скорость <select name="speed">${OPT([[0.5,"медленно"],[1,"обычно"],[1.5,"быстрее"],[2,"быстро"],[3,"очень быстро"]],st.speed||1)}</select></label>
+      <label>Время <select name="night">${OPT([["auto","как в Ташкенте"],["day","всегда день"],["night","всегда ночь"]],st.night||"auto")}</select></label>
+      <label>Погода <select name="weather">${OPT([["none","ясно"],["rain","дождь"],["snow","снег"],["leaves","листопад"]],st.weather||"none")}</select></label>
+      <label>Трава <input type="color" name="grass" value="${g.grass||"#5aa04a"}"></label>
+      <label>Дорожки <input type="color" name="path" value="${g.path||"#c9a46a"}"></label>
+      <label>Вода <input type="color" name="water" value="${g.water||"#3f86c6"}"></label>`,
+      async v=>{const gch={};["grass","path","water"].forEach(k=>{if(v[k]!==(g[k]||{grass:"#5aa04a",path:"#c9a46a",water:"#3f86c6"}[k]))gch[k]=v[k]});
+        if(Object.keys(gch).length){const t=builderTools().find(x=>x.name==="set_ground");await t.execute(gch)}
+        runBuilder("set_game_settings",{speed:+v.speed,night:v.night,weather:v.weather})});
+  },
+  order(){
+    form(`<label style="width:100%">Что сделать <input name="text" maxlength="600" style="flex:1;min-width:220px" placeholder="например: построй офис для нового проекта"></label>`,
+      v=>{if(!v.text.trim())return;runBuilder("leave_task_for_builder_shift",{text:v.text.trim()})});
+  }
+};
+function agentMenu(a){
+  const items=INBOX.filter(x=>x.agent_id===a.id&&(x.status==="active"||x.status==="new"));
+  $menu.innerHTML=`<div class="row"><input id="ordtext" maxlength="600" style="flex:1;min-width:200px" placeholder="Что сделать или делать иначе…" aria-label="Поручение агенту">
+    <select id="ordkind" aria-label="Тип поручения"><option value="rule">всегда</option><option value="task">один раз</option></select>
+    <button type="button" id="ordok">Поручить</button></div>`+
+    items.map(x=>`<div class="item"><span>${x.kind==="rule"?"Всегда":"Разово"}: ${esc(x.text)}</span><button type="button" data-cancel="${x.id}" aria-label="Отменить">✕</button></div>`).join("")+
+    `<div class="item"><span>Поручения агент учтёт в ближайшую смену. Запустить смену вне расписания можно в Claude.</span></div>`;
+  $menu.classList.add("show");
+  document.getElementById("ordok").onclick=async()=>{
+    const t=document.getElementById("ordtext").value.trim(), k=document.getElementById("ordkind").value; if(!t) return;
+    const id=await addInbox({agent_id:a.id,agent_name:a.name,owner:a.owner,kind:k,status:k==="rule"?"active":"new",text:t.slice(0,600)});
+    say(id?(k==="rule"?"Запомнил. Буду так делать каждую смену.":"Записал. Сделаю в ближайшую смену."):"Не получилось записать, попробуй ещё раз."); agentMenu(a);
+  };
+  $menu.querySelectorAll("[data-cancel]").forEach(b=>b.onclick=async()=>{try{await DB.doc("inbox/"+b.dataset.cancel).update({status:"cancelled"});say("Отменил.")}catch(e){say("Не получилось отменить.")} agentMenu(a)});
+}
+
+/* ---------- drawing ---------- */
+function isNight(){return nightNow()}
+function drawTree(x,y){
+  R(x+6,y+9,4,7,"#6b4423");
+  R(x+1,y-6,14,14,"#2f7a36"); R(x-1,y-2,18,8,"#2f7a36"); R(x+3,y-9,10,4,"#2f7a36");
+  R(x+3,y-5,4,3,"#4fa055"); R(x+9,y-1,3,2,"#4fa055");
+  R(x+2,y+15,12,2,"rgba(0,0,0,.18)");
+}
+function drawGround(){
+  for(let ty=0;ty<OH;ty++)for(let tx=0;tx<OW;tx++){
+    const c=out[ty][tx], x=tx*T, y=ty*T, h=hash(tx,ty);
+    const G=(VIS.ground||STYLE.ground)||{};
+    if(c==="p"||c==="d"){R(x,y,T,T,G.path||"#c9a46a");if(h>.5)R(x+3+((h*97)|0)%9,y+4,2,2,"#b58f58");R(x+10,y+11,2,1,shade(G.path||"#c9a46a",.88));continue}
+    if(c==="w"){R(x,y,T,T,G.water||"#3f86c6");const o=(frame>>4)%4;R(x+((tx*5+o*3)%12),y+5,4,1,"#7fb8e8");R(x+((ty*7+o*2)%10),y+11,3,1,"#7fb8e8");continue}
+    if(c==="f"){R(x,y,T,T,"#a87c4f");if(h>.6)R(x+4,y+6,3,2,"#8f6640");continue}
+    const gr=G.grass||"#5aa04a";
+    R(x,y,T,T,gr);
+    if(h>.3)R(x+((h*131)|0)%13,y+((h*71)|0)%13,2,2,shade(gr,.88));
+    if(h>.7)R(x+((h*53)|0)%13,y+((h*29)|0)%13,1,2,shade(gr,1.15));
+    if(c==="g"&&h>.94){const fc=["#f4e04a","#f07ab0","#ffffff","#b48cf2"][(h*1000|0)%4];R(x+6,y+7,3,3,fc);R(x+7,y+8,1,1,"#e8a33a")}
+  }
+}
+function drawBuilding(sl,off){
+  const st=OST(off.id), x=sl.x*T,y=sl.y*T,w=6*T,h=4*T, roof=st.roof||off.roof||"#b8473a", wall=st.wall||"#e8dcc0", door=st.door||"#8a5a2c";
+  R(x-2,y+h-2,w+4,4,"rgba(0,0,0,.2)");
+  R(x,y+20,w,h-20,wall); for(let i=0;i<6;i++)R(x,y+26+i*6,w,1,shade(wall,.92));
+  R(x-4,y-2,w+8,24,roof); for(let i=0;i<5;i++)R(x-4,y+2+i*4,w+8,1,"rgba(0,0,0,.15)");
+  R(x-4,y+20,w+8,3,"rgba(0,0,0,.35)");
+  R(x+20,y+4,56,12,"#3a2414"); R(x+21,y+5,54,10,st.sign||"#f2b45a");
+  ctx.fillStyle=st.sign_text||"#3a2414";ctx.font="8px 'Press Start 2P', monospace";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(String(st.label||off.short||off.name).slice(0,9),x+48,y+10.5,52);
+  const night=isNight(), win=night?"#ffd77a":"#9fd3f0";
+  [[x+8,y+30],[x+72,y+30]].forEach(([wx,wy])=>{R(wx-1,wy-1,18,14,"#7a5232");R(wx,wy,16,12,win);R(wx+7,wy,2,12,"#7a5232");R(wx,wy+5,16,2,"#7a5232");if(!night)R(wx+2,wy+2,3,2,"#d8f0ff")});
+  R(x+2*T-2,y+h-26,T*2+4,26,shade(door,.75)); R(x+2*T,y+h-24,T-1,24,door); R(x+3*T+1,y+h-24,T-1,24,door);
+  R(x+3*T-4,y+h-12,2,3,"#f2b45a"); R(x+3*T+2,y+h-12,2,3,"#f2b45a");
+}
+function drawSite(sl){
+  const x=sl.x*T,y=sl.y*T,w=6*T,h=4*T;
+  for(let i=0;i<=w;i+=8){R(x+i-1,y,3,h,"#8a5a2c")}
+  R(x,y+6,w,2,"#a8743e"); R(x,y+h-10,w,2,"#a8743e");
+  R(x+30,y+24,22,10,"#9a9a9a"); R(x+32,y+22,18,3,"#b5b5b5"); R(x+58,y+30,10,6,"#c46a3a"); R(x+60,y+28,6,2,"#d98050");
+}
+function drawSign(tx,ty,color){
+  const x=tx*T,y=ty*T;
+  R(x+7,y+8,2,8,"#6b4423"); R(x+1,y+1,14,9,"#6b4423"); R(x+2,y+2,12,7,color||"#e9c98f");
+  R(x+4,y+4,8,1,"#7a5232"); R(x+4,y+6,6,1,"#7a5232");
+}
+function shade(hex,k){const n=parseInt(hex.slice(1),16);let r=n>>16,g=(n>>8)&255,b=n&255;r=Math.max(0,Math.min(255,Math.round(r*k)));g=Math.max(0,Math.min(255,Math.round(g*k)));b=Math.max(0,Math.min(255,Math.round(b*k)));return "#"+((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1)}
+function drawPlayer(){drawPlayerAt(P,PL())}
+function drawPlayerAt(p,L){
+  const x=Math.round(p.x), y=Math.round(p.y);
+  const leg = p.moving ? ((p.step>>3)%2) : 0, back=p.dir==="up";
+  if(p.sit){R(x-4,y-5,3,3,L.pants_color);R(x+1,y-5,3,3,L.pants_color);R(x-4,y-2,3,1,L.shoes_color);R(x+1,y-2,3,1,L.shoes_color)}
+  else {
+  R(x-6,y-1,12,3,"rgba(0,0,0,.22)");
+  // legs + shoes
+  R(x-4,y-5,3,5-(leg?1:0),L.pants_color); R(x+1,y-5,3,5-(leg?0:1),L.pants_color);
+  R(x-4,y-1+(leg?-1:0),3,1,L.shoes_color); R(x+1,y-1+(leg?0:-1),3,1,L.shoes_color);
+  }
+  // torso
+  const tc=L.top_color, dk=shade(tc,.8);
+  R(x-5,y-12,10,8,tc);
+  if(L.top==="jacket"&&!back){R(x-1,y-12,2,8,dk)}
+  if(L.top==="hoodie"){R(x-4,y-13,8,2,dk);if(!back){R(x-2,y-8,4,3,dk)}}
+  if(L.top==="shirt"&&!back){R(x-1,y-12,2,2,"#ffffff");R(x,y-10,1,1,dk);R(x,y-8,1,1,dk)}
+  if(L.top==="suit"&&!back){R(x-2,y-12,4,8,"#f4f1e8");R(x-1,y-11,2,5,"#c9563c")}
+  R(x-7,y-11,2,6,tc); R(x+5,y-11,2,6,tc); R(x-7,y-5,2,2,L.skin); R(x+5,y-5,2,2,L.skin);
+  // head
+  R(x-5,y-21,10,9,L.skin);
+  const hc=L.hair_color, hs=L.hair_style;
+  if(hs!=="bald"){
+    R(x-5,y-22,10,3,hc);
+    if(hs==="long"){R(x-6,y-21,2,9,hc);R(x+4,y-21,2,9,hc)}
+    else if(hs==="bun"){R(x-2,y-25,4,3,hc);R(x-6,y-21,2,4,hc);R(x+4,y-21,2,4,hc)}
+    else if(hs==="curly"){R(x-6,y-23,12,4,hc);R(x-6,y-20,2,4,hc);R(x+4,y-20,2,4,hc);R(x-4,y-24,2,1,hc);R(x+1,y-24,2,1,hc)}
+    else if(hs==="mohawk"){R(x-1,y-26,2,5,hc)}
+    else if(hs==="side"){R(x-6,y-21,3,4,hc);R(x-5,y-20,6,1,hc)}
+    else {R(x-6,y-21,2,3,hc);R(x+4,y-21,2,3,hc)}
+    if(back){R(x-5,y-21,10,7,hc)}
+  }
+  // face
+  if(!back){
+    if(p.dir==="left"){R(x-3,y-17,2,2,"#1a1010")}
+    else if(p.dir==="right"){R(x+1,y-17,2,2,"#1a1010")}
+    else {R(x-3,y-17,2,2,"#1a1010");R(x+1,y-17,2,2,"#1a1010");R(x-1,y-14,2,1,"#b56a4a")}
+    if(L.glasses){const gx=p.dir==="left"?-4:p.dir==="right"?0:-4, gw=p.dir==="down"?8:4;R(x+gx,y-18,gw,1,"#222");R(x+gx,y-18,1,3,"#222");R(x+gx+gw-1,y-18,1,3,"#222");if(gw===8)R(x-4,y-16,8,1,"#222")}
+    if(L.beard){R(x-5,y-15,10,3,hc);R(x-3,y-13,6,1,hc);R(x-1,y-14,2,1,"#b56a4a")}
+  }
+  // hat
+  const hh=L.hat_color, hd=shade(hh,.8);
+  if(L.hat==="beanie"){R(x-6,y-24,12,5,hh);R(x-6,y-20,12,2,hd);R(x-1,y-26,2,2,"#f2b45a")}
+  if(L.hat==="cap"){R(x-5,y-24,10,4,hh);if(p.dir==="left")R(x-8,y-21,4,2,hd);else if(p.dir==="right")R(x+4,y-21,4,2,hd);else if(!back)R(x-5,y-21,10,2,hd)}
+  if(L.hat==="cap_back"){R(x-5,y-24,10,4,hh);if(p.dir==="down")R(x-3,y-25,6,1,hd)}
+  if(L.hat==="straw"){R(x-8,y-21,16,2,hh);R(x-5,y-25,10,4,hh);R(x-5,y-22,10,1,"#c9563c")}
+  if(L.hat==="bandana"){R(x-5,y-23,10,3,hh);R(x+4,y-21,3,2,hh)}
+  drawHeld();
+  if(L.name){ctx.font="6px 'Press Start 2P', monospace";ctx.textAlign="center";ctx.textBaseline="alphabetic";const w=ctx.measureText(L.name).width+6;R(x-w/2,y-38,w,10,"rgba(42,31,23,.85)");ctx.fillStyle="#ffffff";ctx.fillText(L.name,x,y-30.5)}
+}
+function drawAgent(a0,i){
+  const a=Object.assign({},a0,{st:liveSt(a0)==="work"?"work":liveSt(a0)});
+  const [dx,dy]=DESKS[i], X=IOX+dx*T, Y=IOY+dy*T, cx=X+24, L=Object.assign({shirt:"#888888",hair:"#333333",skin:"#d9a273",prop:""},ALOOK(a)), st=a.st;
+  R(cx-8,Y-20,16,18,"#3a3f4a");
+  let hy=Y-19;
+  if(st!=="off"){
+    const bob = st==="idle" ? ((frame>>5)%2) : 0;
+    R(cx-6,Y-8+bob,12,9,L.shirt);
+    hy=Y-19+bob+(st==="idle"?2:0);
+    R(cx-5,hy,10,10,L.skin); R(cx-6,hy-2,12,4,L.hair); R(cx-6,hy,2,5,L.hair); R(cx+4,hy,2,3,L.hair);
+    const blink=(frame+dx*17+dy*5)%180<5;
+    if(st==="idle"){R(cx-3,hy+5,2,1,"#2a1a10");R(cx+1,hy+5,2,1,"#2a1a10")}
+    else if(!blink){R(cx-3,hy+4,2,2,"#1a1010");R(cx+1,hy+4,2,2,"#1a1010")}
+    if(st==="bad")R(cx-1,hy+8,3,1,"#7a3a2a");
+  }
+  R(X,Y,48,10,"#a8743e"); R(X,Y,48,2,"#c48c52"); R(X,Y+10,48,5,"#7a5232"); R(X+2,Y+15,3,1,"#4a3018"); R(X+43,Y+15,3,1,"#4a3018");
+  if(st!=="off"){
+    const t = st==="work" ? ((frame>>1)%2) : st==="ok" ? ((frame>>2)%2) : st==="bad" ? ((frame>>4)%2) : 0;
+    R(cx-7,Y-1-t,3,2,L.skin); R(cx+4,Y-2+t,3,2,L.skin);
+  } else { R(cx-4,Y-3,8,6,"#f4e04a"); R(cx-3,Y-1,6,1,"#7a5232"); }
+  R(cx-6,Y-7,13,8,"#9aa4ad"); R(cx-6,Y-7,13,1,"#c4ccd2");
+  const led = st==="work"?(((frame>>2)%2)?"#f2e04a":"#8a7a20"):st==="ok"?"#5fd08a":st==="bad"?(((frame>>3)%2)?"#ff6b5e":"#7a2a24"):"#4a5560";
+  R(cx,Y-4,2,2,led);
+  const px=X+3, py=Y-6;
+  if(L.prop==="plant"){R(px,py+2,5,5,"#8a5a3a");R(px-1,py-4,2,6,"#4f9a4a");R(px+2,py-6,2,8,"#5fb35a");R(px+4,py-3,2,5,"#4f9a4a")}
+  if(L.prop==="mug"){R(px,py+2,4,5,"#f4f1e8");R(px+4,py+3,1,3,"#f4f1e8");if((frame>>4)%2)R(px+1,py-2,1,2,"rgba(255,255,255,.5)")}
+  if(L.prop==="paper"){R(px,py+3,8,3,"#f4f1e8");R(px+1,py+2,8,1,"#e2ddd0")}
+  if(L.prop==="chart"){R(px,py-1,8,8,"#f4f1e8");R(px+1,py+3,2,3,"#d8473a");R(px+4,py+1,1,5,"#f2b45a");R(px+6,py,1,6,"#3fae66")}
+  if(L.prop==="clock"){R(px,py,7,7,"#f4f1e8");R(px+3,py+1,1,3,"#222");R(px+3,py+3,2,1,"#222")}
+  if(L.prop==="phone"){R(px,py+4,5,3,"#222");R(px+1,py+4,3,1,"#3a9a9a")}
+  if(L.prop==="books"){R(px,py+2,2,5,"#c9563c");R(px+2,py+1,2,6,"#3e7cc9");R(px+4,py+3,2,4,"#6a9a4a")}
+  const lx=X+40; R(lx,Y-9,2,9,"#444c55"); R(lx-3,Y-11,8,3,"#555e68");
+  const glow = st==="work"?"rgba(242,224,74,.55)":st==="ok"?"rgba(95,208,138,.45)":st==="bad"?"rgba(255,107,94,.5)":"rgba(242,180,90,.25)";
+  R(lx-5,Y-8,12,8,glow);
+  if(st==="bad"){const by=hy-14+((frame>>4)%2);R(cx+3,by,9,10,"#fff");R(cx+5,by+10,2,2,"#fff");R(cx+6,by+2,3,5,"#d8473a");R(cx+6,by+8,3,1,"#d8473a")}
+  if(st==="idle"){const z=(frame>>4)%3;ctx.fillStyle="rgba(255,255,255,.9)";ctx.font="8px 'Press Start 2P', monospace";ctx.textAlign="left";ctx.textBaseline="alphabetic";ctx.fillText("z",cx+5,hy-2-z);if(z>0)ctx.fillText("z",cx+10,hy-7-z)}
+  if(st==="work"){const d=(frame>>3)%4;R(cx+5,hy-9,13,7,"#fff");for(let k=0;k<3;k++)R(cx+7+k*4,hy-6,2,2,k<d?"#3a2414":"#d8cbb0");if((frame>>2)%3===0)PARTS.length<200&&0}
+  if(st==="ok"&&((frame+i*40)>>6)%3===0){R(cx+6,hy-6,7,6,"#fff");R(cx+7,hy-3,1,1,"#3fae66");R(cx+8,hy-2,1,1,"#3fae66");R(cx+9,hy-3,1,1,"#3fae66");R(cx+10,hy-4,1,1,"#3fae66");R(cx+11,hy-5,1,1,"#3fae66")}
+}
+function drawInterior(){
+  const st=OST(OFFICES[scene].id), fl=st.floor||"#b07a48", iw=st.interior_wall||"#6b8fa8";
+  R(0,0,LW,LH,"#1a120c");
+  for(let ty=2;ty<IH;ty++)for(let tx=1;tx<IW-1;tx++){
+    const x=IOX+tx*T,y=IOY+ty*T;R(x,y,T,T,(tx+ty)%2?fl:shade(fl,.95));R(x,y+15,T,1,shade(fl,.8));if(hash(tx,ty)>.7)R(x+4,y+7,3,1,shade(fl,.88));
+  }
+  R(IOX,IOY,IW*T,2*T,iw); for(let i=0;i<IW*T;i+=8)R(IOX+i,IOY,1,2*T,shade(iw,.9));
+  R(IOX,IOY+2*T-3,IW*T,3,"#4a3020");
+  R(IOX,IOY,T,IH*T,shade(iw,.9)); R(IOX+(IW-1)*T,IOY,T,IH*T,shade(iw,.9));
+  const night=isNight();
+  [3,11].forEach(tx=>{const x=IOX+tx*T,y=IOY+6;R(x-1,y-1,2*T+2,18,"#4a3020");R(x,y,2*T,16,night?"#1e2a4a":"#9fd3f0");if(night){R(x+6,y+4,1,1,"#fff");R(x+20,y+9,1,1,"#fff")}else{R(x+3,y+3,8,3,"#ffffff")}R(x+T-1,y,2,16,"#4a3020")});
+  const bx=IOX+6*T,by=IOY+4;R(bx,by,4*T,22,"#4a3020");R(bx+2,by+2,4*T-4,18,"#3a5a3a");
+  [["#f4e04a",4],["#f07ab0",18],["#9fd3f0",32],["#f4f1e8",46]].forEach(([c,o])=>{R(bx+o,by+5,10,10,c);R(bx+o+2,by+8,6,1,"#555");R(bx+o+2,by+10,5,1,"#555")});
+  [[1,2],[14,2]].forEach(([tx,ty])=>{const x=IOX+tx*T,y=IOY+ty*T;R(x+4,y+8,8,8,"#8a5a3a");R(x+2,y,4,10,"#4f9a4a");R(x+6,y-3,4,12,"#5fb35a");R(x+10,y+1,4,9,"#4f9a4a")});
+  R(IOX+7*T,IOY+(IH-1)*T,2*T,T,"#2a1a10"); R(IOX+7*T+2,IOY+(IH-1)*T-6,2*T-4,6,"#c4621e");
+  const rs=roomsOf(curOffice());
+  ctx.font="8px 'Press Start 2P', monospace";ctx.textBaseline="alphabetic";
+  if(ROOM>0){R(IOX,IOY+5*T,T,2*T,"#2a1a10");R(IOX+T-3,IOY+5*T,3,2*T,"#6b4423");ctx.fillStyle="#f6e3b8";ctx.textAlign="left";ctx.fillText("◀ "+(rs[ROOM-1].name||""),IOX+2,IOY+5*T-4)}
+  if(ROOM<rs.length-1){R(IOX+(IW-1)*T,IOY+5*T,T,2*T,"#2a1a10");R(IOX+(IW-1)*T,IOY+5*T,3,2*T,"#6b4423");ctx.fillStyle="#f6e3b8";ctx.textAlign="right";ctx.fillText((rs[ROOM+1].name||"")+" ▶",IOX+IW*T-2,IOY+5*T-4)}
+}
+
+/* ---------- builder animation, particles, decor, weather, settings ---------- */
+const BLD={x:0,y:0,dir:"down",mode:"idle",hidden:false,step:0,target:null,work:null,tool:"hammer"};
+let BLD_READY=false, JOB=false, paintJob=null;
+const PARTS=[];
+function bldHome(){const sl=siteSlot||SLOTS[0];return {x:(sl.x+1.5)*T,y:(sl.y+4)*T+12}}
+function resetBuilder(){if(!JOB){const h=bldHome();BLD.x=h.x;BLD.y=h.y;BLD.dir="down";BLD.mode="idle";BLD.hidden=false;BLD_READY=true}}
+function walkTo(x,y){return new Promise(res=>{BLD.hidden=false;BLD.target={x,y,res};BLD.mode="walk"})}
+function work(ms,fx,tool){return new Promise(res=>{BLD.mode="work";BLD.tool=tool||"hammer";BLD.work={t:0,ms,fx,res}})}
+function walkHome(){const h=bldHome();walkTo(h.x,h.y).then(()=>{BLD.dir="down"})}
+function puff(x,y,c,n,kind){for(let i=0;i<n;i++)PARTS.push({x,y,vx:(Math.random()-.5)*0.06,vy:-Math.random()*0.06-0.01,life:600+Math.random()*500,age:0,c,kind:kind||"dot",s:1+Math.random()*2})}
+function builderUpdate(dt){
+  if(BLD.mode==="walk"&&BLD.target){
+    const dx=BLD.target.x-BLD.x, dy=BLD.target.y-BLD.y, d=Math.hypot(dx,dy), sp=0.09*dt;
+    if(d<=sp){BLD.x=BLD.target.x;BLD.y=BLD.target.y;BLD.mode="idle";const r=BLD.target.res;BLD.target=null;r()}
+    else{BLD.x+=dx/d*sp;BLD.y+=dy/d*sp;BLD.step+=dt/16;BLD.dir=Math.abs(dx)>Math.abs(dy)?(dx<0?"left":"right"):(dy<0?"up":"down")}
+  } else if(BLD.mode==="work"&&BLD.work){
+    const w=BLD.work; w.t+=dt; const p=Math.min(1,w.t/w.ms);
+    if(w.fx) w.fx(p,dt);
+    if(w.t>=w.ms){BLD.mode="idle";BLD.work=null;w.res()}
+  }
+  for(let i=PARTS.length-1;i>=0;i--){const q=PARTS[i];q.age+=dt;q.x+=q.vx*dt;q.y+=q.vy*dt;if(q.kind==="drop")q.vy+=0.0004*dt;if(q.age>q.life)PARTS.splice(i,1)}
+}
+function drawParts(){
+  for(const q of PARTS){
+    const a=1-q.age/q.life;
+    if(q.kind==="text"){ctx.globalAlpha=a;ctx.fillStyle=q.c;ctx.font="8px 'Press Start 2P', monospace";ctx.textAlign="center";ctx.fillText(q.t,q.x,q.y);ctx.globalAlpha=1;continue}
+    if(q.kind==="smoke"){const z=q.s+q.age/450;ctx.globalAlpha=a*.7;R(q.x-z/2,q.y-z/2,Math.ceil(z),Math.ceil(z),q.c);ctx.globalAlpha=1;continue}
+    if(q.kind==="star"){ctx.globalAlpha=a;R(q.x-1,q.y,3,1,q.c);R(q.x,q.y-1,1,3,q.c);ctx.globalAlpha=1;continue}
+    ctx.globalAlpha=a; R(q.x,q.y,Math.ceil(q.s),Math.ceil(q.s),q.c); ctx.globalAlpha=1;
+  }
+}
+function drawBuilder(){ if(!BUILDER) return; drawBuilderAt(BLD) }
+function drawBuilderAt(b){
+  if(b.hidden) return;
+  const x=Math.round(b.x),y=Math.round(b.y),L=BUILDER_LOOK, walking=b.mode==="walk", working=b.mode==="work";
+  const leg=walking?((b.step>>3)%2):0, swing=working?((frame>>2)%2):((frame>>5)%2);
+  R(x-6,y-1,12,3,"rgba(0,0,0,.22)");
+  R(x-4,y-5,3,5-(leg?1:0),"#5a4a3a"); R(x+1,y-5,3,5-(leg?0:1),"#5a4a3a");
+  R(x-5,y-12,10,8,L.shirt); R(x-5,y-9,10,1,"#c9c9c9"); R(x-3,y-12,1,8,"#c99a20"); R(x+2,y-12,1,8,"#c99a20");
+  R(x-5,y-21,10,9,L.skin);
+  R(x-6,y-24,12,4,"#f2c230"); R(x-7,y-21,14,1,"#d9a820");
+  if(b.dir!=="up"){R(x-3,y-17,2,2,"#1a1010");R(x+1,y-17,2,2,"#1a1010");R(x-1,y-14,2,1,"#b56a4a")}
+  const hx=b.dir==="left"?x-9:x+5;
+  if(b.tool==="brush"){R(hx,y-12-swing*3,2,7,"#8a5a2c");R(hx-1,y-15-swing*3,4,3,b.work&&b.work.color||"#3e7cc9")}
+  else if(b.tool==="wand"){R(hx,y-13-swing*2,1,8,"#6b4423");R(hx-1,y-15-swing*2,3,3,"#f2e04a")}
+  else {R(hx,y-11-swing*3,2,7,"#8a5a2c");R(hx-2,y-13-swing*3,6,3,"#888")}
+}
+/* decor */
+const DECOR_SOLID=new Set(["tree","bench","lamp","fountain","statue","rock","bush","well","cart"]);
+function decorList(){return (STYLE.decor||[]).filter(d=>!VIS.hideDecor.has(d.id)).concat(VIS.ghostDecor)}
+function decorAt(tx,ty){return decorList().find(d=>d.tx===tx&&d.ty===ty)}
+function freeTile(tx,ty){return out[ty]&&out[ty][tx]==="g"&&!decorAt(tx,ty)&&!(STYLE.decor||[]).some(d=>d.tx===tx&&d.ty===ty)&&!(ty===Math.floor(P.y/T)&&tx===Math.floor(P.x/T))}
+function anchorTile(near){
+  if(near==="player") return [Math.floor(P.x/T),Math.floor(P.y/T)];
+  if(near==="pond") return [23,10];
+  if(near==="center") return [22,17];
+  const i=OFFICES.findIndex(o=>o.id===near); if(i>=0){const sl=SLOTS[i];return [sl.x+3,sl.y+5]}
+  return [22,17];
+}
+function findFree(ax,ay){for(let r=0;r<10;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){if(Math.max(Math.abs(dx),Math.abs(dy))!==r)continue;const x=ax+dx,y=ay+dy;if(freeTile(x,y))return [x,y]}return null}
+function drawDecor(d){
+  const x=d.tx*T,y=d.ty*T,c=d.color;
+  switch(d.kind){
+    case "tree": drawTree(x,y); break;
+    case "bush": R(x+2,y+6,12,9,c||"#3f8a3f");R(x+4,y+4,8,4,c||"#3f8a3f");R(x+5,y+7,3,2,"#5fb35a");R(x+3,y+14,10,2,"rgba(0,0,0,.18)");if(d.berries!==false){R(x+9,y+9,2,2,"#d8473a");R(x+5,y+11,2,2,"#d8473a")}break;
+    case "flowers": [[3,5],[9,3],[6,10],[12,9],[2,12]].forEach(([a,b],i)=>{R(x+a,y+b+2,1,3,"#3f8a3f");R(x+a-1,y+b,3,3,c||["#f4e04a","#f07ab0","#ffffff","#b48cf2","#ff8a3a"][i])});break;
+    case "bench": R(x+1,y+6,14,3,"#8a5a2c");R(x+1,y+10,14,2,"#a8743e");R(x+2,y+12,2,3,"#5a3a1c");R(x+12,y+12,2,3,"#5a3a1c");R(x+1,y+15,14,1,"rgba(0,0,0,.18)");break;
+    case "lamp": {R(x+7,y-6,2,21,"#3a3f4a");R(x+4,y-9,8,4,"#3a3f4a");const on=isNight();R(x+5,y-8,6,2,on?"#ffe28a":"#d9d9c0");if(on){ctx.globalAlpha=.25;R(x-4,y-14,24,16,"#ffe28a");ctx.globalAlpha=1}R(x+5,y+14,6,2,"rgba(0,0,0,.2)");break}
+    case "fountain": {R(x-1,y+6,18,9,"#9aa4ad");R(x+1,y+7,14,6,"#3f86c6");R(x+7,y,2,8,"#9aa4ad");const o=(frame>>3)%3;R(x+6,y-3-o,1,3,"#bfe3ff");R(x+9,y-2-((o+1)%3),1,3,"#bfe3ff");R(x+8,y-5,1,2,"#e8f6ff");break}
+    case "statue": R(x+3,y+10,10,5,"#9aa4ad");R(x+5,y,6,10,"#b5bec6");R(x+6,y-4,4,4,"#b5bec6");R(x+4,y+15,8,1,"rgba(0,0,0,.2)");break;
+    case "rock": R(x+3,y+8,10,6,"#8a8f96");R(x+5,y+6,6,3,"#a3a8ae");R(x+3,y+14,10,1,"rgba(0,0,0,.2)");break;
+    case "well": R(x+1,y+6,14,9,"#8a8f96");R(x+3,y+7,10,4,"#2a3a4a");R(x+1,y-4,2,10,"#6b4423");R(x+13,y-4,2,10,"#6b4423");R(x,y-6,16,3,c||"#b8473a");break;
+    case "cart": R(x+1,y+5,14,6,c||"#a8743e");R(x+2,y+3,12,2,"#f2b45a");R(x+3,y+11,3,3,"#3a2414");R(x+10,y+11,3,3,"#3a2414");break;
+  }
+}
+/* weather */
+const WX=[];
+function weatherUpdate(dt){
+  const w=((VIS.settings||STYLE.settings)||{}).weather||"none"; if(w==="none"||scene!=="out"){WX.length=0;return}
+  const n=w==="rain"?3:w==="snow"?1:w==="leaves"?0.3:0;
+  for(let i=0;i<n*(dt/16);i++)WX.push({x:Math.random()*LW,y:-4,age:0});
+  for(let i=WX.length-1;i>=0;i--){const p=WX[i];p.age+=dt;if(w==="rain"){p.y+=0.35*dt;p.x-=0.05*dt}else if(w==="snow"){p.y+=0.03*dt;p.x+=Math.sin(p.age/300)*0.2}else{p.y+=0.04*dt;p.x+=Math.sin(p.age/250)*0.5}if(p.y>LH+4)WX.splice(i,1)}
+}
+function weatherDraw(){
+  const w=((VIS.settings||STYLE.settings)||{}).weather||"none";
+  for(const p of WX){if(w==="rain")R(p.x,p.y,1,4,"rgba(170,200,255,.7)");else if(w==="snow")R(p.x,p.y,2,2,"#ffffff");else R(p.x,p.y,3,2,["#d98030","#c9563c","#e0b030"][Math.floor(p.age/97)%3])}
+  if(w==="rain")R(0,0,LW,LH,"rgba(40,60,90,.15)");
+}
+function nightNow(){const n=((VIS.settings||STYLE.settings)||{}).night||"auto";if(n==="day")return false;if(n==="night")return true;const h=+new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Tashkent",hour:"2-digit",hour12:false}).format(new Date());return h>=19||h<6}
+function speedMul(){const s=+(((VIS.settings||STYLE.settings)||{}).speed||1);return Math.max(0.4,Math.min(4,isFinite(s)?s:1))}
+/* job runner: hides dialog, plays animation, then the caller applies change */
+const ANIMQ=[];
+function queueAnim(fn){ANIMQ.push(fn)}
+async function playAnims(){
+  if(!ANIMQ.length) return;
+  JOB=true; if(dlg.open){dlg.open=false;$d.classList.remove("show","chat");$in.blur()}
+  try{ while(ANIMQ.length){ const fn=ANIMQ.shift(); try{await fn()}catch(e){} } }
+  finally{ JOB=false; walkHome(); }
+}
+function clone(o){return o===undefined?undefined:JSON.parse(JSON.stringify(o))}
+function findOffice(q){
+  if(!OFFICES.length) return null;
+  const k=String(q||"").toLowerCase().trim();
+  return OFFICES.find(o=>o.id.toLowerCase()===k)||OFFICES.find(o=>[o.name,o.short,o.id].some(v=>String(v||"").toLowerCase().includes(k)||k.includes(String(v||"").toLowerCase())))||(OFFICES.length===1?OFFICES[0]:null);
+}
+function officeAnchor(id){const i=OFFICES.findIndex(o=>o.id===id);return i>=0?SLOTS[i]:null}
+
+/* ---------- style (changed by the Builder in chat, kept in db "town/style") ---------- */
+const DEFAULT_PLAYER={hat:"beanie",hat_color:"#3e8a4a",hair_style:"short",hair_color:"#5a3a22",skin:"#f0c9a0",top:"jacket",top_color:"#e07b2e",pants_color:"#2e4a7a",shoes_color:"#3a2414",glasses:false,beard:false};
+let STYLE={player:{},offices:{},agents:{},settings:{},ground:{},decor:[]};
+let MYPATCH={};
+const PL=()=>Object.assign({},DEFAULT_PLAYER,VIS.player||Object.assign({},PLAYERS[ME.login]||{},MYPATCH));
+const VIS={offices:{},agents:{},player:null,settings:null,ground:null,hideDecor:new Set(),ghostDecor:[]};
+const OST=id=>(id in VIS.offices?VIS.offices[id]:(STYLE.offices&&STYLE.offices[id]))||{};
+const ALOOK=a=>Object.assign({},a.look||{},(a.id in VIS.agents?VIS.agents[a.id]:(STYLE.agents&&STYLE.agents[a.id]))||{});
+let DB=null, SAMPLE=null, MCP=null, INBOX=[], REPORTS={};
+const CCR="Claude Code Remote";
+function fmtWhen(iso){try{return new Intl.DateTimeFormat("ru-RU",{timeZone:"Asia/Tashkent",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"}).format(new Date(iso))}catch(e){return iso}}
+/* live status from the agent's own report: working now / finished after the Builder's last round */
+function liveSt(a){
+  const r=REPORTS[a.id]; if(!r) return a.st;
+  if(r.state==="working"&&r.started_at&&Date.now()-new Date(r.started_at)<3*3600e3) return "work";
+  const upd=(OWNERS[a.owner]||{}).updated_at; const fin=r.finished_at&&new Date(r.finished_at); if(fin&&(!upd||fin>new Date(upd))) return r.state==="error"?"bad":"ok";
+  return a.st;
+}
+function reportLines(a){
+  const r=REPORTS[a.id]; if(!r) return [];
+  if(liveSt(a)==="work") return ["Я сейчас на смене, работаю… Загляни чуть позже — расскажу, что получилось."];
+  if(!r.summary) return [];
+  const out=[`Итог смены ${fmtWhen(r.finished_at||r.started_at)}:`]; String(r.summary).split(/\n+/).filter(Boolean).slice(0,6).forEach(l=>out.push(l));
+  if(Array.isArray(r.links)&&r.links.length) out.push("Ссылки: "+r.links.slice(0,3).join(" "));
+  return out;
+}
+/* Writes send only the changed part (db merges nested objects), and recent local
+   changes are re-applied over incoming snapshots for a while, so a late or stale
+   snapshot can never roll back a change that was just made. */
+const PATCHES=[];
+function isObj(v){return v&&typeof v==="object"&&!Array.isArray(v)}
+function deepMerge(a,b){const o=Object.assign({},a);for(const k in b){o[k]=isObj(b[k])&&isObj(a[k])?deepMerge(a[k],b[k]):clone(b[k])}return o}
+function normStyle(d){return {player:d.player||{},offices:d.offices||{},agents:d.agents||{},settings:d.settings||{},ground:d.ground||{},decor:Array.isArray(d.decor)?d.decor:[]}}
+function applyStyleSnapshot(d){
+  const now=Date.now(); for(let i=PATCHES.length-1;i>=0;i--) if(PATCHES[i].until<now) PATCHES.splice(i,1);
+  let st=normStyle(d||{}); for(const p of PATCHES) st=deepMerge(st,p.patch); STYLE=normStyle(st);
+}
+async function saveStyle(part){
+  part=clone(part||STYLE);
+  PATCHES.push({patch:part,until:Date.now()+20000});
+  if(!DB) return false;
+  const ref=DB.doc("town/style");
+  try{ await ref.update(part); return true }
+  catch(e){ try{ const cur=await ref.get(); await ref.set(deepMerge(cur.exists?(cur.data()||{}):{},part)); return true }catch(e2){ return false } }
+}
+async function addInbox(item){
+  item=Object.assign({by:ME.login},item);
+  const doc={...item,created_at:new Date().toISOString()};
+  if(DB){ try{ const ref=await DB.collection("inbox").add(doc); return ref.id }catch(e){ return null } }
+  return null;
+}
+const HEX=/^#[0-9a-fA-F]{6}$/;
+function cleanColors(obj,keys){const o={};for(const k of keys){if(obj[k]!==undefined&&obj[k]!==null&&obj[k]!==""){if(k.endsWith("color")||["roof","wall","sign","sign_text","floor","interior_wall","door","shirt","hair","skin"].includes(k)){if(HEX.test(obj[k]))o[k]=obj[k]}else o[k]=obj[k]}}return o}
+
+function townSummary(){
+  return OFFICES.map(o=>`- офис [${o.id}] «${o.name}» (вывеска «${o.short}»), агенты: ${o.agents.map(a=>`${a.name} [${a.id}]`).join(", ")}`).join("\n");
+}
+function builderTools(){
+  const saved=async(part)=>{const s=await saveStyle(part);return s?"готово, сохранено":"ОШИБКА: не удалось сохранить в базу"};
+  return [
+    {name:"set_player_look",description:"Переодеть/изменить человечка пользователя. Передавай только то, что меняется. Цвета — hex #rrggbb.",
+     inputSchema:{type:"object",properties:{
+       hat:{type:"string",enum:["none","beanie","cap","cap_back","straw","bandana"]},hat_color:{type:"string"},
+       hair_style:{type:"string",enum:["short","long","bun","curly","bald","mohawk","side"]},hair_color:{type:"string"},
+       skin:{type:"string"},top:{type:"string",enum:["tshirt","hoodie","jacket","shirt","suit"]},top_color:{type:"string"},
+       pants_color:{type:"string"},shoes_color:{type:"string"},glasses:{type:"boolean"},beard:{type:"boolean"},name:{type:"string",description:"имя над головой, пусто — убрать"}}},
+     execute:async(inp)=>{
+       const add=cleanColors(inp,["hat","hat_color","hair_style","hair_color","skin","top","top_color","pants_color","shoes_color","glasses","beard"]);
+       if(inp.name!==undefined) add.name=String(inp.name).slice(0,16);
+       if(!Object.keys(add).length) return "ОШИБКА: нечего менять (цвета — только #rrggbb)";
+       const curP=Object.assign({},PLAYERS[ME.login]||{},MYPATCH);
+       VIS.player=VIS.player||clone(curP);
+       const np=Object.assign({},curP,add); MYPATCH=np; setTimeout(()=>{if(MYPATCH===np)MYPATCH={}},30000);
+       const okp=await DB.doc("players/"+ME.login).set(np).then(()=>true,()=>false);
+       const r=okp?"готово, сохранено":"ОШИБКА: не удалось сохранить";
+       queueAnim(async()=>{
+         await walkTo(P.x+16,P.y); BLD.dir="left"; let sw=false;
+         await work(1700,(p)=>{if(Math.random()<.5)PARTS.push({x:P.x-8+Math.random()*16,y:P.y-26+Math.random()*24,vx:0,vy:-0.02,life:500,age:0,c:"#fff6a0",kind:"star"});if(p>.6&&!sw){sw=true;puff(P.x,P.y-12,"#ffffff",14);VIS.player=null}},"wand");
+         VIS.player=null;
+       });
+       return r;
+     }},
+    {name:"set_office_style",description:"Перекрасить/отремонтировать офис снаружи и внутри. office_id — id офиса из списка. Цвета — hex #rrggbb. label — текст вывески (до 9 символов).",
+     inputSchema:{type:"object",required:["office_id"],properties:{office_id:{type:"string"},roof:{type:"string"},wall:{type:"string"},door:{type:"string"},sign:{type:"string",description:"фон вывески"},sign_text:{type:"string",description:"цвет текста вывески"},label:{type:"string"},floor:{type:"string"},interior_wall:{type:"string"}}},
+     execute:async(inp)=>{
+       const off=findOffice(inp.office_id); if(!off) return "ОШИБКА: офис не найден. Есть офисы: "+OFFICES.map(o=>o.id).join(", ");
+       const add=cleanColors(inp,["roof","wall","door","sign","sign_text","floor","interior_wall"]); if(inp.label)add.label=String(inp.label).slice(0,9);
+       if(!Object.keys(add).length) return "ОШИБКА: ни одного корректного цвета (нужен формат #rrggbb)";
+       STYLE.offices=STYLE.offices||{};
+       const prev=clone(STYLE.offices[off.id]||{}), merged=Object.assign({},prev,add);
+       if(!(off.id in VIS.offices)) VIS.offices[off.id]=prev;
+       STYLE.offices[off.id]=merged;
+       const r=await saved({offices:{[off.id]:merged}});
+       const sl=officeAnchor(off.id);
+       const outside=["roof","wall","door","sign","sign_text","label"].some(k=>k in add), inside=["floor","interior_wall"].some(k=>k in add);
+       queueAnim(async()=>{
+         const x0=sl.x*T, x1=(sl.x+6)*T, y=(sl.y+4)*T+12;
+         if(outside){
+           await walkTo(x0-4,y); BLD.dir="up";
+           paintJob={id:off.id,st:merged,p:0};
+           const col=add.roof||add.wall||add.sign||"#ffffff";
+           await work(3000,(p)=>{paintJob.p=p;BLD.x=x0-4+(x1-x0+8)*p;BLD.dir="up";if(Math.random()<.6)PARTS.push({x:x0+(x1-x0)*p+(Math.random()-.5)*6,y:sl.y*T+Math.random()*60,vx:(Math.random()-.5)*0.03,vy:-0.01,life:500,age:0,c:col,kind:"drop",s:2})},"brush");
+           paintJob=null;
+         }
+         delete VIS.offices[off.id];
+         if(inside){
+           const dx=(sl.x+3)*T, dy=(sl.y+4)*T+6;
+           await walkTo(dx,dy+6); BLD.hidden=true;
+           await work(2000,()=>{if(Math.random()<.08)PARTS.push({x:dx+(Math.random()-.5)*20,y:dy-20,vx:0,vy:-0.02,life:700,age:0,c:"#fff",kind:"text",t:"тук!"});if(Math.random()<.2)puff(dx,dy-6,"#c9b9a0",1)});
+           BLD.hidden=false;
+         }
+         puff((sl.x+3)*T,(sl.y+2)*T,"#fff6a0",16,"star");
+       });
+       return r;
+     }},
+    {name:"set_agent_look",description:"Переодеть агента за столом (он внутри офиса). agent_id — id или имя агента. Цвета — hex.",
+     inputSchema:{type:"object",required:["agent_id"],properties:{agent_id:{type:"string"},shirt:{type:"string"},hair:{type:"string"},skin:{type:"string"},prop:{type:"string",enum:["plant","mug","paper","chart","clock","phone","books"]}}},
+     execute:async(inp)=>{
+       let oi=OFFICES.findIndex(o=>o.agents.some(a=>a.id===inp.agent_id));
+       if(oi<0){const k=String(inp.agent_id||"").toLowerCase();oi=OFFICES.findIndex(o=>o.agents.some(a=>a.name.toLowerCase().includes(k)));if(oi>=0)inp.agent_id=OFFICES[oi].agents.find(a=>a.name.toLowerCase().includes(k)).id}
+       if(oi<0) return "ОШИБКА: агент не найден";
+       const add=cleanColors(inp,["shirt","hair","skin"]); if(inp.prop)add.prop=inp.prop;
+       if(!Object.keys(add).length) return "ОШИБКА: нечего менять";
+       STYLE.agents=STYLE.agents||{};
+       const prev=clone(STYLE.agents[inp.agent_id]||{}); if(!(inp.agent_id in VIS.agents)) VIS.agents[inp.agent_id]=prev;
+       STYLE.agents[inp.agent_id]=Object.assign({},prev,add);
+       const r=await saved({agents:{[inp.agent_id]:STYLE.agents[inp.agent_id]}}); const sl=SLOTS[oi], dx=(sl.x+3)*T, dy=(sl.y+4)*T+6, id=inp.agent_id;
+       queueAnim(async()=>{
+         await walkTo(dx,dy+6); BLD.hidden=true;
+         await work(1600,()=>{if(Math.random()<.15)PARTS.push({x:dx+(Math.random()-.5)*16,y:dy-18,vx:0,vy:-0.02,life:600,age:0,c:"#fff6a0",kind:"star"})});
+         delete VIS.agents[id]; BLD.hidden=false;
+       });
+       return r;
+     }},
+    {name:"set_game_settings",description:"Игровые настройки: speed — скорость ходьбы человечка (1 обычная, 0.5 медленно, 2 быстро, до 4); night — auto|day|night; weather — none|rain|snow|leaves.",
+     inputSchema:{type:"object",properties:{speed:{type:"number"},night:{type:"string",enum:["auto","day","night"]},weather:{type:"string",enum:["none","rain","snow","leaves"]}}},
+     execute:async(inp)=>{
+       const add={}; if(typeof inp.speed==="number"&&isFinite(inp.speed))add.speed=Math.max(0.4,Math.min(4,inp.speed)); if(inp.night)add.night=inp.night; if(inp.weather)add.weather=inp.weather;
+       if(!Object.keys(add).length) return "ОШИБКА: нечего менять";
+       VIS.settings=VIS.settings||clone(STYLE.settings||{});
+       STYLE.settings=Object.assign({},STYLE.settings||{},add);
+       const r=await saved({settings:STYLE.settings});
+       queueAnim(async()=>{
+         await walkTo(P.x-16,P.y); BLD.dir="right";
+         await work(1300,(p)=>{if(Math.random()<.5)PARTS.push({x:BLD.x+8,y:BLD.y-16,vx:(Math.random()-.2)*0.08,vy:-Math.random()*0.05,life:600,age:0,c:"#fff6a0",kind:"star"})},"wand");
+         VIS.settings=null;
+       });
+       return r;
+     }},
+    {name:"build_decoration",description:"Построить/посадить украшение на улице. kind: tree|bush|flowers|bench|lamp|fountain|statue|rock|well|cart. near: player|pond|center|<office_id>. count — до 6. color — hex (для flowers/bush/well/cart, необязательно).",
+     inputSchema:{type:"object",required:["kind"],properties:{kind:{type:"string",enum:["tree","bush","flowers","bench","lamp","fountain","statue","rock","well","cart"]},near:{type:"string"},count:{type:"integer"},color:{type:"string"}}},
+     execute:async(inp)=>{
+       const n=Math.max(1,Math.min(6,inp.count||1)); const [ax,ay]=anchorTile(inp.near||"player"); const made=[];
+       STYLE.decor=STYLE.decor||[];
+       for(let i=0;i<n;i++){const t=findFree(ax,ay); if(!t) break; const d={id:Math.random().toString(36).slice(2,8),kind:inp.kind,tx:t[0],ty:t[1]}; if(HEX.test(inp.color||""))d.color=inp.color; STYLE.decor=STYLE.decor.concat([d]); VIS.hideDecor.add(d.id); made.push(d)}
+       if(!made.length) return "ОШИБКА: нет свободного места рядом";
+       const r=await saved({decor:STYLE.decor});
+       queueAnim(async()=>{
+         for(const d of made){
+           await walkTo(d.tx*T+20,d.ty*T+14); BLD.dir="left";
+           await work(1200,()=>{if(Math.random()<.35)puff(d.tx*T+8,d.ty*T+12,"#c9b9a0",1);if(Math.random()<.06)PARTS.push({x:d.tx*T+8,y:d.ty*T-4,vx:0,vy:-0.02,life:500,age:0,c:"#fff",kind:"text",t:"тук!"})});
+           VIS.hideDecor.delete(d.id); puff(d.tx*T+8,d.ty*T+8,"#fff6a0",8,"star");
+         }
+       });
+       return r.startsWith("ОШИБКА")?r:`построено: ${made.length}`;
+     }},
+    {name:"remove_decoration",description:"Убрать украшения. kind — тип (или all), near — где искать (player|pond|center|<office_id>), count — сколько (по умолчанию 1, all — все такого типа).",
+     inputSchema:{type:"object",properties:{kind:{type:"string"},near:{type:"string"},count:{type:"string"}}},
+     execute:async(inp)=>{
+       const [ax,ay]=anchorTile(inp.near||"player");
+       let list=(STYLE.decor||[]).filter(d=>!inp.kind||inp.kind==="all"||d.kind===inp.kind).sort((a,b)=>Math.hypot(a.tx-ax,a.ty-ay)-Math.hypot(b.tx-ax,b.ty-ay));
+       const n=inp.count==="all"?list.length:Math.max(1,parseInt(inp.count||"1")||1); list=list.slice(0,n);
+       if(!list.length) return "ОШИБКА: убирать нечего";
+       const ids=new Set(list.map(d=>d.id)); STYLE.decor=(STYLE.decor||[]).filter(d=>!ids.has(d.id)); VIS.ghostDecor=VIS.ghostDecor.concat(list);
+       const r=await saved({decor:STYLE.decor});
+       queueAnim(async()=>{
+         for(const d of list){await walkTo(d.tx*T+20,d.ty*T+14);BLD.dir="left";await work(900,()=>{if(Math.random()<.4)puff(d.tx*T+8,d.ty*T+10,"#c9b9a0",1)});VIS.ghostDecor=VIS.ghostDecor.filter(x=>x.id!==d.id);puff(d.tx*T+8,d.ty*T+8,"#c9b9a0",10)}
+       });
+       return r.startsWith("ОШИБКА")?r:`убрано: ${list.length}`;
+     }},
+    {name:"set_ground",description:"Перекрасить землю: grass (трава), path (дорожки), water (вода). Цвета — hex.",
+     inputSchema:{type:"object",properties:{grass:{type:"string"},path:{type:"string"},water:{type:"string"}}},
+     execute:async(inp)=>{
+       const add={}; for(const k of ["grass","path","water"]) if(HEX.test(inp[k]||"")) add[k]=inp[k];
+       if(!Object.keys(add).length) return "ОШИБКА: нужен цвет #rrggbb";
+       VIS.ground=VIS.ground||clone(STYLE.ground||{}); STYLE.ground=Object.assign({},STYLE.ground||{},add);
+       const r=await saved({ground:STYLE.ground});
+       queueAnim(async()=>{await walkTo(22*T,17*T);await work(1600,()=>{for(let i=0;i<3;i++)PARTS.push({x:Math.random()*LW,y:Math.random()*LH,vx:0,vy:-0.01,life:500,age:0,c:add.grass||add.path||add.water||"#fff",kind:"star"})},"wand");VIS.ground=null});
+       return r;
+     }},
+    {name:"leave_task_for_builder_shift",description:"Записать задание, для которого нужна новая механика или правка кода игры (новые возможности, предметы, звуки, мини-игры), а также новый офис для проекта, перенос или переименование агента. Строитель сделает это на ближайшем обходе (10:17, 13:17 или 18:17).",
+     inputSchema:{type:"object",required:["text"],properties:{text:{type:"string"}}},
+     execute:async(inp)=>{const id=await addInbox({agent_id:"builder",agent_name:"Строитель",kind:"task",status:"new",text:String(inp.text).slice(0,800)});
+       if(id) queueAnim(async()=>{await work(800,()=>{if(Math.random()<.2)PARTS.push({x:BLD.x,y:BLD.y-28,vx:0,vy:-0.02,life:500,age:0,c:"#fff",kind:"text",t:"✎"})})});
+       return id?"записано в план":"ОШИБКА: не удалось записать"}}
+  ];
+}
+function agentTools(a){
+  return [
+    {name:"add_instruction",description:"Сохранить поручение пользователя. kind=task — разовая задача на ближайшую смену; kind=rule — постоянная корректировка работы, действует во всех следующих сменах.",
+     inputSchema:{type:"object",required:["kind","text"],properties:{kind:{type:"string",enum:["task","rule"]},text:{type:"string",description:"суть поручения своими словами пользователя, коротко и однозначно"}}},
+     execute:async(inp)=>{const id=await addInbox({agent_id:a.id,agent_name:a.name,kind:inp.kind==="rule"?"rule":"task",status:inp.kind==="rule"?"active":"new",text:String(inp.text).slice(0,600)});return id?("записано, id "+id):"не удалось записать"}},
+    {name:"list_instructions",description:"Показать действующие поручения этому агенту.",inputSchema:{type:"object",properties:{}},
+     execute:async()=>JSON.stringify(INBOX.filter(x=>x.agent_id===a.id&&(x.status==="active"||x.status==="new")).map(x=>({id:x.id,kind:x.kind,text:x.text,status:x.status})))},
+    {name:"run_shift_now",description:"Запустить внеочередную смену прямо сейчас (если пользователь просит «запусти», «сделай сейчас», «начинай»). В text передай, что сделать в этой смене, если пользователь уточнил.",
+     inputSchema:{type:"object",properties:{text:{type:"string"}}},
+     execute:async(inp)=>{
+       if(!MCP) return "ОШИБКА: из городка нельзя запускать смены — нет доступа к коннектору Claude Code Remote. Пусть пользователь запустит меня в Claude, или подключит этот коннектор.";
+       try{ const extra=(inp&&inp.text)?("Дополнительно в этой смене от пользователя (из городка): "+String(inp.text).slice(0,800)):"";
+            await MCP.callTool(CCR,"fire_trigger",extra?{trigger_id:a.id,text:extra}:{trigger_id:a.id});
+            REPORTS[a.id]=Object.assign({},REPORTS[a.id]||{},{state:"working",started_at:new Date().toISOString()});
+            return "смена запущена"; }
+       catch(e){ const c=e&&e.code; return "ОШИБКА запуска ("+(c||"unknown")+"): "+(c==="server_not_connected"?"коннектор Claude Code Remote не подключён":c==="approval_required"||c==="not_in_manifest"?"нужно разрешить городку запуск смен":e&&e.message||""); }
+     }},
+    {name:"cancel_instruction",description:"Отменить поручение по id.",inputSchema:{type:"object",required:["id"],properties:{id:{type:"string"}}},
+     execute:async(inp)=>{if(!DB)return "нет базы";try{await DB.doc("inbox/"+inp.id).update({status:"cancelled"});return "отменено"}catch(e){return "не нашёл такое поручение"}}}
+  ];
+}
+function promptFor(o,history,msg){
+  const tr=history.map(h=>(h.role==="user"?"Пользователь: ":"Ты: ")+h.content).join("\n");
+  if(o.builder){
+    return `Ты — Строитель в пиксельной игре «Городок агентов». Пользователь (Жасур) ходит по городку человечком. Ты умеешь ВСЁ, что касается городка. Мгновенно, через инструменты (каждый проигрывает анимацию, как ты идёшь и работаешь): переодеть человечка и подписать имя над головой; перекрасить офисы снаружи и внутри, сменить вывеску; переодеть агентов; изменить скорость ходьбы, день/ночь, погоду; построить или убрать деревья, кусты, цветы, скамейки, фонари, фонтан, статую, камни, колодец, тележку; перекрасить траву, дорожки, воду. На лавочках человечек может сидеть (подойти и нажать E или кликнуть по лавочке), а сидя — курить, есть пиццу или пить колу (кнопки 1/2/3). Всё, чего нет в инструментах (новые механики, новые виды зданий и предметов, звуки, мини-игры, новый офис для проекта, перенос или переименование агента), записывай через leave_task_for_builder_shift — ты сделаешь это на ближайшем обходе (10:17, 13:17 или 18:17), включая правку кода игры.
+Офисы и агенты сейчас (id в квадратных скобках):
+${townSummary()}
+Текущий стиль и настройки: ${JSON.stringify({player:STYLE.player,offices:STYLE.offices,settings:STYLE.settings,ground:STYLE.ground,decor_count:(STYLE.decor||[]).length})}
+Правила: отвечай по-русски, коротко (1–3 предложения), по-дружески, от первого лица, в образе строителя. Цвета словами («синий как у бренда») переводи в hex сам; крыша темнее стен. Сначала вызови нужные инструменты, потом скажи, что сделал. ОЧЕНЬ ВАЖНО: говори «сделал» только если инструмент вернул «готово»/«построено»/«убрано»/«записано». Если инструмент вернул текст с «ОШИБКА» — честно скажи, что не получилось и почему, и попробуй ещё раз с исправленными данными. Не используй слово «коллеги».
+${tr?"Разговор до этого:\n"+tr+"\n":""}Пользователь: ${msg}`;
+  }
+  const mine=INBOX.filter(x=>x.agent_id===o.id&&(x.status==="active"||x.status==="new")).map(x=>`[${x.kind}] ${x.text}`).join("; ")||"нет";
+  const rep0=REPORTS[o.id]; const last=rep0?(rep0.state==="working"&&liveSt(o)==="work"?"сейчас идёт смена":`${rep0.state==="error"?"с ошибкой":"успешно"} ${fmtWhen(rep0.finished_at||rep0.started_at)}: ${rep0.summary||"(без резюме)"}`):"отчёта в городке пока нет";
+  const done=INBOX.filter(x=>x.agent_id===o.id&&x.status==="done").slice(-3).map(x=>`«${x.text}» → ${x.reply||"сделано"}`).join("; ")||"нет";
+  return `Ты — агент «${o.name}» в пиксельной игре «Городок агентов». На самом деле ты — запланированная задача Claude у пользователя (Жасур, тимлид CS в BILLZ).
+Твоя работа: ${o.job||o.lines.join(" ")}
+Твоя смена: ${o.sched}. Статус последней смены: ${STATUS_TAG[o.st]||o.st}.
+Последняя смена: ${last}
+Выполненные недавно поручения: ${done}
+Действующие поручения: ${mine}
+Что ты умеешь здесь: (1) рассказать об итогах последней смены; (2) принять поручение: разовая задача — kind=task (сделаешь в ближайшую смену); «делай иначе / впредь / больше не делай / запомни» — kind=rule, это ПОСТОЯННАЯ корректировка, которую ты соблюдаешь в каждой следующей смене; сохраняй через add_instruction; (3) показать или отменить поручения; (4) если пользователь просит начать сейчас — run_shift_now. Если инструмент вернул «ОШИБКА» — честно скажи об этом.
+Правила: отвечай по-русски, коротко (1–3 предложения), от первого лица, в образе своего персонажа. Если пользователь дал поручение — сохрани его и скажи, когда учтёшь (${o.day===null||o.day===undefined?(o.sched==="Вручную"?"при следующем запуске — меня запускают вручную":"в ближайшую смену: "+o.sched):"в ближайшую смену: "+o.sched}). Не говори, что уже сделал работу — ты её сделаешь в смену. Если просьба непонятна — уточни одним вопросом. Не используй слово «коллеги».
+${tr?"Разговор до этого:\n"+tr+"\n":""}Пользователь: ${msg}`;
+}
+async function sendChat(){
+  const msg=$in.value.trim(); if(!msg||dlg.busy||!SAMPLE) return;
+  const o=dlg.obj, key=o.builder?"builder":o.id;
+  const hist=chatHist[key]=chatHist[key]||[];
+  $in.value=""; dlg.busy=true;
+  try{
+    const res=await SAMPLE(promptFor(o,hist.slice(-8),msg),{tools:o.builder?builderTools():agentTools(o),cache:false});
+    const text=(res&&res.text||"").trim()||"Готово.";
+    hist.push({role:"user",content:msg},{role:"assistant",content:text});
+    if(ANIMQ.length){dlg.busy=false; await playAnims();}
+    if(!dlg.open){dlg.open=true;dlg.obj=o;dlg.chat=true;$d.classList.add("show","chat")}
+    say(text);
+  }catch(e){
+    if(ANIMQ.length){dlg.busy=false; await playAnims();}
+    if(!dlg.open){dlg.open=true;dlg.obj=o;dlg.chat=true;$d.classList.add("show","chat")}
+    say(e&&e.code==="rate_limited"?"Дай мне минутку передохнуть и спроси ещё раз.":e&&e.code==="not_granted"?"Чат с агентами не разрешён в этом просмотре.":"Что-то пошло не так, попробуй ещё раз.");
+  }
+  dlg.busy=false; renderName(); if(!o.builder) drawPortrait(o);
+  setTimeout(()=>$in.focus(),0);
+}
+
+/* ---------- loop ---------- */
+const $place=document.getElementById("place");
+let last=performance.now();
+function placeLabel(){const off=curOffice();$place.textContent=off?(off.name+((roomsOf(off).length>1&&curRoom().name)?" · "+curRoom().name:"")):"Городок"}
+function update(dt){
+  builderUpdate(dt); weatherUpdate(dt);
+  for(const o of Object.values(OTHERS)){ if(o.moving) o.step=(o.step||0)+dt/16 }
+  if(dlg.open){
+    const lines=curLines(), line=lines[dlg.i];
+    if(dlg.shown<line.length){dlg.shown=Math.min(line.length,dlg.shown+dt*0.06);}
+    $dt.textContent=dlg.busy?"…":line.slice(0,Math.floor(dlg.shown));
+    document.getElementById("dnext").textContent = dlg.busy?"думает…": dlg.shown>=line.length ? (dlg.i<lines.length-1?"▼ дальше":(($menu.classList.contains("show"))?"выбери ниже · Esc — выйти":"✕ закрыть")) : "";
+    P.moving=false; $pr.style.display="none"; return;
+  }
+  if(fadeTo!==null) return;
+  if(P.sit){
+    if(scene!=="out"||keys.left||keys.right||keys.up||keys.down) standUp();
+    else {P.moving=false;sitUpdate(dt);$pr.style.display="none";return}
+  }
+  let vx=0,vy=0;
+  if(keys.left)vx--; if(keys.right)vx++; if(keys.up)vy--; if(keys.down)vy++;
+  P.moving=!!(vx||vy);
+  if(P.moving){
+    const l=Math.hypot(vx,vy), sp=0.075*dt*speedMul(); vx=vx/l*sp; vy=vy/l*sp;
+    if(Math.abs(vx)>Math.abs(vy))P.dir=vx<0?"left":"right"; else P.dir=vy<0?"up":"down";
+    if(!blocked(P.x+vx,P.y))P.x+=vx;
+    if(!blocked(P.x,P.y+vy))P.y+=vy;
+    P.step+=dt/16*speedMul();
+  }
+  if(scene==="out"){
+    const tx=Math.floor(P.x/T),ty=Math.floor((P.y-3)/T);
+    if(out[ty]&&out[ty][tx]==="d"){lastDoor=doorOf[ty][tx];fadeTo=lastDoor}
+  } else {
+    const ty=Math.floor((P.y-IOY)/T);
+    if(ty>=IH-1) fadeTo="out";
+    const nR=roomsOf(curOffice()).length;
+    if(P.x<IOX+T-2&&ROOM>0){ROOM--;P.x=IOX+(IW-1)*T-10;fade=0.7;placeLabel()}
+    else if(P.x>IOX+(IW-1)*T+2&&ROOM<nR-1){ROOM++;P.x=IOX+T+10;fade=0.7;placeLabel()}
+  }
+  const n=nearest();
+  if(n){$pr.style.display="block";$pr.textContent=(matchMedia("(pointer:coarse)").matches?"E":"E / Пробел")+" — "+n.label}
+  else $pr.style.display="none";
+}
+function render(){
+  ctx.setTransform(S,0,0,S,0,0); ctx.imageSmoothingEnabled=false;
+  if(scene==="out"){
+    CAM.x=Math.max(0,Math.min(OW*T-LW,Math.round(P.x-LW/2))); CAM.y=Math.max(0,Math.min(OH*T-LH,Math.round(P.y-LH/2)));
+    ctx.setTransform(S,0,0,S,-CAM.x*S,-CAM.y*S);
+    drawGround();
+    const drawPlot=p=>{
+      if(p.kind!=="office"){drawSite(p.slot);return}
+      drawBuilding(p.slot,p.office);
+      if(paintJob&&paintJob.id===p.office.id){
+        const sl=p.slot, cx0=sl.x*T-4, w=(6*T+8)*paintJob.p;
+        ctx.save();ctx.beginPath();ctx.rect(cx0,sl.y*T-4,w,4*T+8);ctx.clip();
+        const had=p.office.id in VIS.offices, saved=VIS.offices[p.office.id]; VIS.offices[p.office.id]=paintJob.st; drawBuilding(sl,p.office); if(had)VIS.offices[p.office.id]=saved; else delete VIS.offices[p.office.id]; ctx.restore();
+      }
+    };
+    signs.forEach(s=>drawSign(s.tx,s.ty,s.color));
+    const objs=[];
+    plots.forEach(p=>objs.push({y:(p.slot.y+4)*T-1,d:()=>drawPlot(p)}));
+    for(let ty=0;ty<OH;ty++)for(let tx=0;tx<OW;tx++)if(out[ty][tx]==="t")objs.push({y:ty*T+16,d:()=>drawTree(tx*T,ty*T)});
+    objs.push({y:P.sit?P.y+0.5:P.y,d:drawPlayer});
+    if(BUILDER) objs.push({y:builderPos().y,d:drawBuilder});
+    OTHER_B.forEach(ob=>objs.push({y:ob.y,d:()=>drawBuilderAt(ob)}));
+    othersHere().forEach(o=>objs.push({y:o.y,d:()=>drawPlayerAt(o,Object.assign({},DEFAULT_PLAYER,o.look||{},{name:(o.look&&o.look.name)||ownerName(o.login)}))}));
+    decorList().forEach(d=>objs.push({y:d.ty*T+(d.kind==="flowers"?0:15),d:()=>drawDecor(d)}));
+    objs.sort((a,b)=>a.y-b.y).forEach(o=>o.d());
+    drawParts();
+    ctx.setTransform(S,0,0,S,0,0);
+    if(isNight())R(0,0,LW,LH,"rgba(20,24,70,.42)");
+    ctx.setTransform(S,0,0,S,-CAM.x*S,-CAM.y*S);
+    decorList().forEach(d=>{if(d.kind==="lamp"&&isNight()){ctx.globalAlpha=.35;R(d.tx*T-6,d.ty*T-12,28,24,"#ffe28a");ctx.globalAlpha=1}});
+    ctx.setTransform(S,0,0,S,0,0);
+    weatherDraw();
+  } else {
+    CAM.x=0;CAM.y=0;
+    drawInterior();
+    const objs=curAgents().map((a,i)=>({y:IOY+(DESKS[i][1]+1)*T,d:()=>drawAgent(a,i)}));
+    objs.push({y:P.y,d:drawPlayer});
+    othersHere().forEach(o=>objs.push({y:o.y,d:()=>drawPlayerAt(o,Object.assign({},DEFAULT_PLAYER,o.look||{},{name:(o.look&&o.look.name)||ownerName(o.login)}))}));
+    objs.sort((a,b)=>a.y-b.y).forEach(o=>o.d());
+  }
+  if(fadeTo!==null||fade>0){
+    if(fadeTo!==null){fade+=0.08; if(fade>=1){
+      scene=fadeTo; fadeTo=null;
+      if(scene!=="out"){ROOM=0;P.x=IOX+8*T;P.y=IOY+(IH-2)*T+10;P.dir="up";placeLabel()}
+      else {const sl=SLOTS[lastDoor];P.x=(sl.x+3)*T;P.y=(sl.y+5)*T+4;P.dir="down";ROOM=0;placeLabel()}
+    }}
+    else fade=Math.max(0,fade-0.08);
+    R(0,0,LW,LH,`rgba(0,0,0,${Math.min(1,fade)})`);
+  }
+}
+function loop(now){
+  const dt=Math.min(50,now-last); last=now; frame++;
+  update(dt); render();
+  requestAnimationFrame(loop);
+}
+function tick(){
+  const d=new Date(), tz="Asia/Tashkent";
+  document.getElementById("htime").textContent=new Intl.DateTimeFormat("ru-RU",{timeZone:tz,hour:"2-digit",minute:"2-digit"}).format(d);
+  const wd=new Intl.DateTimeFormat("ru-RU",{timeZone:tz,weekday:"short"}).format(d);
+  const dn=new Intl.DateTimeFormat("ru-RU",{timeZone:tz,day:"numeric"}).format(d);
+  document.getElementById("hday").textContent=wd.charAt(0).toUpperCase()+wd.slice(1)+". "+dn;
+}
+function applyData(){
+  const map=new Map(), order=[];
+  const logins=Object.keys(OWNERS).sort((a,b)=>a===ME.login?-1:b===ME.login?1:a.localeCompare(b));
+  for(const login of logins){
+    for(const off of (OWNERS[login].offices||[])){
+      let m=map.get(off.id);
+      if(!m){m=Object.assign({},off,{agents:[],owners:[]});delete m.rooms;map.set(off.id,m);order.push(off.id)}
+      if(!m.owners.includes(login)) m.owners.push(login);
+      (off.agents||[]).forEach(a=>m.agents.push(Object.assign({},a,{owner:login})));
+      if(Array.isArray(off.rooms)&&off.rooms.length){m.rooms=m.rooms||[];off.rooms.forEach(r=>{if(!m.rooms.some(x=>x.id===r.id))m.rooms.push(r)})}
+    }
+  }
+  const list=order.map(id=>map.get(id));
+  list.sort((a,b)=>(a.slot??999)-(b.slot??999));
+  OFFICES=list.slice(0,SLOTS.length);
+  const mine=OWNERS[ME.login]; BUILDER=mine&&mine.builder?Object.assign({},mine.builder,{owner:ME.login}):null; UPDATED=mine&&mine.updated_at||null;
+  buildMap(); resetBuilder();
+  OTHER_B=logins.filter(l=>l!==ME.login&&OWNERS[l].builder).map((l,k)=>{
+    const fo=OFFICES.findIndex(o=>o.owners.includes(l)); const sl=SLOTS[fo>=0?fo:0];
+    return {x:(sl.x+4.5)*T+k*6,y:(sl.y+5)*T+10,dir:"down",mode:"idle",hidden:false,step:0,tool:"hammer",work:null,data:Object.assign({},OWNERS[l].builder,{owner:l,name:"Строитель ("+ownerName(l)+")"})};
+  });
+  if(typeof scene==="number"&&!OFFICES[scene]){scene="out";ROOM=0}
+  if(UPDATED) document.getElementById("upd").textContent="Твой Строитель обновил: "+new Intl.DateTimeFormat("ru-RU",{timeZone:"Asia/Tashkent",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"}).format(new Date(UPDATED));
+}
+/* ---------- presence: other players over a public MQTT relay (positions only) ---------- */
+let lastSent="", lastSentAt=0;
+function mqStart(){
+  if(!window.mqtt||!ROOMKEY||MQ) return;
+  try{
+    MQ=mqtt.connect("wss://broker.emqx.io:8084/mqtt",{clientId:"at_"+Math.random().toString(16).slice(2),clean:true,reconnectPeriod:5000,connectTimeout:8000});
+    const topic="agentstown/"+ROOMKEY+"/pos";
+    MQ.on("connect",()=>MQ.subscribe(topic));
+    MQ.on("message",(t,m)=>{try{const d=JSON.parse(m.toString());if(!d.login||d.login===ME.login)return;const o=OTHERS[d.login]||{step:0};OTHERS[d.login]=Object.assign(o,d,{t:Date.now()})}catch(e){}});
+    setInterval(mqSend,200);
+  }catch(e){console.warn(e)}
+}
+function mqSend(){
+  if(!MQ||!MQ.connected||!ME.login) return;
+  const off=curOffice();
+  const d={login:ME.login,x:Math.round(P.x),y:Math.round(P.y),dir:P.dir,moving:P.moving,scene:off?off.id:"out",room:ROOM,look:PL(),sit:!!P.sit};
+  const str=JSON.stringify(d); if(str===lastSent&&Date.now()-lastSentAt<3000) return;
+  lastSent=str; lastSentAt=Date.now(); MQ.publish("agentstown/"+ROOMKEY+"/pos",str);
+}
+function othersHere(){
+  const off=curOffice(), sc=off?off.id:"out", now=Date.now(), list=[];
+  for(const o of Object.values(OTHERS)){ if(now-o.t>12000) continue; if(o.scene!==sc) continue; if(off&&o.room!==ROOM) continue; list.push(o) }
+  return list;
+}
+function onlineText(){const now=Date.now(); const n=Object.values(OTHERS).filter(o=>now-o.t<12000).map(o=>ownerName(o.login)); document.getElementById("online").textContent=n.length?"Онлайн: "+n.join(", "):""}
+async function boot(){
+  applyData();
+  tick(); setInterval(tick,20000); setInterval(onlineText,3000);
+  try{ if(document.fonts&&document.fonts.load) await Promise.all([document.fonts.load("8px 'Press Start 2P'"),document.fonts.load("12px 'Press Start 2P'")]); }catch(e){}
+  requestAnimationFrame(loop);
+  const $lg=document.getElementById("login"), $err=document.getElementById("lerr");
+  document.getElementById("logout").onclick=e=>{e.preventDefault();try{localStorage.removeItem("at_token");localStorage.removeItem("at_repo")}catch(_){ } location.reload()};
+  document.getElementById("loginform").onsubmit=async e=>{
+    e.preventDefault(); $err.textContent="Проверяю…";
+    const repo=document.getElementById("lrepo").value.trim(), tok=document.getElementById("ltoken").value.trim();
+    const res=await start(repo,tok);
+    if(res===true){try{localStorage.setItem("at_token",tok);localStorage.setItem("at_repo",repo)}catch(_){ } $lg.classList.remove("show")}
+    else $err.textContent=res;
+  };
+  let tok=null, repo=null; try{tok=localStorage.getItem("at_token");repo=localStorage.getItem("at_repo")}catch(_){}
+  if(tok&&repo&&await start(repo,tok)===true) return;
+  $lg.classList.add("show");
+}
+async function start(repo,tok){
+  if(!/^[\w.-]+\/[\w.-]+$/.test(repo)) return "Репозиторий в формате владелец/имя.";
+  if(!tok) return "Вставь токен.";
+  GH.repo=repo; GH.token=tok;
+  try{ const u=await ghApi("/user"); ME={login:u.login}; }
+  catch(e){ return e.status===401?"Токен не подошёл: проверь, что скопирован целиком.":"GitHub не ответил ("+(e.status||"сеть")+")."; }
+  try{ const r=await ghApi(`/repos/${repo}`); if(r.permissions&&!r.permissions.push) return "У этого токена нет права записи в "+repo+"."; }
+  catch(e){ return e.status===404?"Не вижу репозиторий "+repo+": у токена нет к нему доступа или ты не приглашён в него.":"GitHub не ответил ("+(e.status||"сеть")+")."; }
+  DB=ghDB;
+  DB.collection("owners").onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data()||{});const was=JSON.stringify(OWNERS);if(JSON.stringify(m)!==was){OWNERS=m;applyData()}},()=>{});
+  DB.collection("players").onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data()||{});PLAYERS=m},()=>{});
+  DB.doc("town/style").onSnapshot(sn=>{ if(sn.exists) applyStyleSnapshot(sn.data()||{}) },()=>{});
+  DB.collection("reports").onSnapshot(q=>{ const m={}; q.docs.forEach(d=>m[d.id]=d.data()); REPORTS=m; },()=>{});
+  DB.collection("inbox").onSnapshot(q=>{ INBOX=q.docs.map(d=>({id:d.id,...d.data()})); if(dlg.open) renderName() },()=>{});
+  await ghPoll(true);
+  setInterval(()=>ghPoll(false),6000);
+  let cfg=GH.files["config.json"];
+  if(!cfg||!cfg.room){cfg=Object.assign({},cfg||{},{room:Array.from(crypto.getRandomValues(new Uint8Array(12))).map(b=>b.toString(16).padStart(2,"0")).join("")});await ghPut("config.json",cfg,"Городок: настройки")}
+  ROOMKEY=cfg.room; mqStart();
+  if(!OWNERS[ME.login]) document.getElementById("chatnote").textContent="Твоих агентов пока нет: их заселит твой Строитель из Claude.";
+  return true;
+}
+boot();
+</script>
+</body>
+</html>
+
+</body></html>
