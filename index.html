@@ -383,6 +383,7 @@ function interactables(){
     const list=signs.map(s=>({x:(s.tx+.5)*T,y:(s.ty+.5)*T,obj:s.obj,label:s.label}));
     const b=builderPos(); if(BUILDER&&!JOB&&!BLD.hidden) list.push({x:b.x,y:b.y-6,obj:{...BUILDER,builder:true,mine:true},label:"поговорить: твой Строитель"});
     OTHER_B.forEach(ob=>list.push({x:ob.x,y:ob.y-6,obj:{...ob.data,builder:true,mine:false},label:"поговорить: "+ob.data.name}));
+    if(YUNA.inited&&!YUNA.hidden) list.push({x:YUNA.x,y:YUNA.y-6,obj:yunaObj(),label:"поговорить: Yuna.AI"});
     decorList().forEach(d=>{if(d.kind==="bench")list.push({x:(d.tx+.5)*T,y:d.ty*T+10,obj:{bench:d,lines:[]},label:"сесть на лавочку"})});
     return list;
   }
@@ -733,6 +734,55 @@ function bldHome(){const sl=siteSlot||SLOTS[0];return {x:(sl.x+1.5)*T,y:(sl.y+4)
 function resetBuilder(){if(!JOB){const h=bldHome();BLD.x=h.x;BLD.y=h.y;BLD.dir="down";BLD.mode="idle";BLD.hidden=false;BLD_READY=true}}
 function walkTo(x,y){return new Promise(res=>{BLD.hidden=false;BLD.target={x,y,res};BLD.mode="walk"})}
 function work(ms,fx,tool){return new Promise(res=>{BLD.mode="work";BLD.tool=tool||"hammer";BLD.work={t:0,ms,fx,res}})}
+/* ---------- Yuna.AI: обходит все проекты, отчёт — reports/yuna.json ---------- */
+const YUNA={x:0,y:0,dir:"down",step:0,mode:"idle",path:[],wait:0,stop:-1,hidden:false,inited:false};
+const YUNA_LOOK={shirt:"#f4f1fb",hair:"#9b6fe0",skin:"#f0c8a0"};
+function yunaDoor(i){const sl=SLOTS[i];return {x:(sl.x+3)*T,y:(sl.y+5)*T+10,ry:(sl.y+6)*T+8}}
+function yunaRoute(a,b){
+  const A=yunaDoor(a),B=yunaDoor(b),pts=[{x:A.x,y:A.ry}];
+  if(A.ry===B.ry){pts.push({x:B.x,y:A.ry})}
+  else{const cols=[11,22,33].map(c=>c*T+8);const c=cols.reduce((m,v)=>Math.abs(v-A.x)+Math.abs(v-B.x)<Math.abs(m-A.x)+Math.abs(m-B.x)?v:m,cols[0]);pts.push({x:c,y:A.ry},{x:c,y:B.ry},{x:B.x,y:B.ry})}
+  pts.push({x:B.x,y:B.y}); return pts;
+}
+function yunaUpdate(dt){
+  if(!OFFICES.length) return;
+  if(!YUNA.inited){const d=yunaDoor(0);YUNA.x=d.x+20;YUNA.y=d.ry;YUNA.stop=0;YUNA.inited=true;YUNA.wait=1500}
+  if(dlg.open&&dlg.obj&&dlg.obj.yuna){YUNA.mode="idle";return}
+  if(YUNA.wait>0){YUNA.wait-=dt; if(YUNA.wait<=0&&YUNA.hidden){YUNA.hidden=false;YUNA.wait=900} return}
+  if(!YUNA.path.length){
+    const n=OFFICES.length, nxt=n>1?(YUNA.stop+1)%n:0;
+    YUNA.path=yunaRoute(Math.max(0,YUNA.stop)%n,nxt); YUNA.stop=nxt;
+  }
+  const t=YUNA.path[0], dx=t.x-YUNA.x, dy=t.y-YUNA.y, d=Math.hypot(dx,dy), sp=0.045*dt;
+  YUNA.mode="walk"; YUNA.step+=dt/16;
+  if(Math.abs(dx)>Math.abs(dy))YUNA.dir=dx<0?"left":"right"; else YUNA.dir=dy<0?"up":"down";
+  if(d<=sp){YUNA.x=t.x;YUNA.y=t.y;YUNA.path.shift();
+    if(!YUNA.path.length){YUNA.mode="idle";YUNA.dir="up";YUNA.hidden=true;YUNA.wait=4000+Math.random()*3000}}
+  else{YUNA.x+=dx/d*sp;YUNA.y+=dy/d*sp}
+}
+function drawYuna(){
+  if(YUNA.hidden||!YUNA.inited) return;
+  const x=Math.round(YUNA.x),y=Math.round(YUNA.y),L=YUNA_LOOK,leg=YUNA.mode==="walk"?((YUNA.step>>3)%2):0;
+  R(x-6,y-1,12,3,"rgba(0,0,0,.22)");
+  R(x-3,y-5,2,5-(leg?1:0),L.skin); R(x+1,y-5,2,5-(leg?0:1),L.skin);
+  R(x-5,y-9,10,5,"#4a3a7a");
+  R(x-5,y-13,10,5,L.shirt); R(x-1,y-13,2,2,"#9b6fe0");
+  R(x-5,y-22,10,9,L.skin);
+  R(x-6,y-24,12,4,L.hair); R(x-6,y-21,2,10,L.hair); R(x+4,y-21,2,10,L.hair);
+  if(YUNA.dir==="up") R(x-5,y-21,10,7,L.hair);
+  else {R(x-3,y-18,2,2,"#1a1010");R(x+1,y-18,2,2,"#1a1010");R(x-1,y-15,2,1,"#c0607a")}
+  const hx=YUNA.dir==="left"?x-9:x+5; R(hx,y-12,4,5,"#2a2a3a"); R(hx+1,y-11,2,3,"#7fd3ff");
+  if((frame>>4)%6===0){R(x+5,y-30,3,3,"#b48cf2");R(x+8,y-33,2,2,"#d6c2f7")}
+}
+function yunaObj(){
+  const r=REPORTS["yuna"], lines=["Привет! Я Yuna.AI. Каждый вечер обхожу все проекты городка и пишу сводку: что где происходит."];
+  if(r&&r.summary){
+    lines.push("Сводка "+fmtWhen(r.finished_at||r.started_at)+":");
+    String(r.summary).split(/\n+/).map(t=>t.trim()).filter(Boolean).slice(0,8).forEach(t=>lines.push(t));
+    lines.push("Полная версия — у тебя в Telegram.");
+  } else lines.push("Первую сводку пришлю сегодня вечером — и в Telegram тоже.");
+  return {name:"Yuna.AI",yuna:true,look:YUNA_LOOK,lines};
+}
 function walkHome(){const h=bldHome();walkTo(h.x,h.y).then(()=>{BLD.dir="down"})}
 function puff(x,y,c,n,kind){for(let i=0;i<n;i++)PARTS.push({x,y,vx:(Math.random()-.5)*0.06,vy:-Math.random()*0.06-0.01,life:600+Math.random()*500,age:0,c,kind:kind||"dot",s:1+Math.random()*2})}
 function builderUpdate(dt){
@@ -1099,7 +1149,7 @@ const $place=document.getElementById("place");
 let last=performance.now();
 function placeLabel(){const off=curOffice();$place.textContent=off?(off.name+((roomsOf(off).length>1&&curRoom().name)?" · "+curRoom().name:"")):"Городок"}
 function update(dt){
-  builderUpdate(dt); weatherUpdate(dt);
+  builderUpdate(dt); weatherUpdate(dt); if(scene==="out")yunaUpdate(dt);
   for(const o of Object.values(OTHERS)){ if(o.moving) o.step=(o.step||0)+dt/16 }
   if(dlg.open){
     const lines=curLines(), line=lines[dlg.i];
@@ -1158,6 +1208,7 @@ function render(){
     for(let ty=0;ty<OH;ty++)for(let tx=0;tx<OW;tx++)if(out[ty][tx]==="t")objs.push({y:ty*T+16,d:()=>drawTree(tx*T,ty*T)});
     objs.push({y:P.sit?P.y+0.5:P.y,d:drawPlayer});
     if(BUILDER) objs.push({y:builderPos().y,d:drawBuilder});
+    objs.push({y:YUNA.y,d:drawYuna});
     OTHER_B.forEach(ob=>objs.push({y:ob.y,d:()=>drawBuilderAt(ob)}));
     othersHere().forEach(o=>objs.push({y:o.y,d:()=>drawPlayerAt(o,Object.assign({},DEFAULT_PLAYER,o.look||{},{name:(o.look&&o.look.name)||ownerName(o.login)}))}));
     decorList().forEach(d=>objs.push({y:d.ty*T+(d.kind==="flowers"?0:15),d:()=>drawDecor(d)}));
