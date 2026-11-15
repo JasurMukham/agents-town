@@ -42,7 +42,8 @@ function describe(m) {
 }
 
 // обращение: любая форма «Юна» как отдельное слово, Yuna/Yuno, @бот или ответ на сообщение бота
-const NAME_RE = /(^|[^a-zа-яё])(юн(а|у|е|ой|ою|ы|очк[а-яё]*|к[а-яё]*|чик[а-яё]*|ечк[а-яё]*|усик[а-яё]*|ч[а-яё]*)?|yun[ao]\w*)(?![a-zа-яё])/i;
+const NOT_NAME = /^(юная|юного|юному|юной|юную|юные|юных|юными|юный|юное|юность\S*|юношеск\S*|юнкер\S*|юннат\S*|юнга\S*|юниор\S*|юнит\S*|юникод\S*|юнион\S*)$/;
+const NAME_RE = { test: t => (String(t).toLowerCase().match(/[a-zа-яё]+/g) || []).some(w => (/^юн[а-яё]{0,7}$/.test(w) && !NOT_NAME.test(w)) || /^yun[a-z]{0,6}$/.test(w)) };
 function addressed(m, me) {
   const t = (m.text || m.caption || "");
   if (m.reply_to_message && m.reply_to_message.from && m.reply_to_message.from.username === me) return true;
@@ -56,9 +57,9 @@ async function ask(messages) {
       const r = await fetch("https://models.github.ai/inference/chat/completions", {
         method: "POST", headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model, messages, temperature: 0.3, response_format: { type: "json_object" } }) });
-      if (!r.ok) continue;
+      if (!r.ok) { console.error("models", model, r.status, (await r.text()).slice(0, 300)); continue }
       const j = await r.json(); return JSON.parse(j.choices[0].message.content);
-    } catch (e) { }
+    } catch (e) { console.error("models", model, e.message) }
   }
   return null;
 }
@@ -67,6 +68,7 @@ async function handle(u) {
   const m = u.message || u.edited_message; if (!m || m.chat.id !== CHAT_ID) return;
   const me = process.env.BOT_USERNAME || "super_YunaAI_bot";
   if (m.from && m.from.username === me) return;
+  if (!describe(m)) return;
   const line = `- ${fmt(m.date, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} ${who(m.from)}${u.edited_message ? " (правка)" : ""}: ${describe(m)} (#${m.message_id})`;
   const memPath = `yuna/memory/${ym(m.date)}.md`;
   await update(memPath, t => (t || `# Память Yuna.AI — группа «Важное», ${ym(m.date)}\n\n`) + line + "\n", "Yuna.AI: память группы");
@@ -106,7 +108,13 @@ async function handle(u) {
 
 module.exports = async (req, res) => {
   const secret = crypto.createHash("sha256").update(String(process.env.TELEGRAM_TOKEN || "")).digest("hex").slice(0, 40);
-  if (req.method === "GET") { res.status(200).json({ ok: true, yuna: "alive", configured: !!(process.env.TELEGRAM_TOKEN && process.env.GH_TOKEN) }); return }
+  if (req.method === "GET") {
+    const out = { ok: true, yuna: "alive", configured: !!(process.env.TELEGRAM_TOKEN && process.env.GH_TOKEN) };
+    if (req.query && req.query.check) {
+      try { await gh("owners"); out.repo = "ok" } catch (e) { out.repo = "error " + (e.status || "") + " " + e.message }
+      for (const model of MODELS) { try { const r = await fetch("https://models.github.ai/inference/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, messages: [{ role: "user", content: "ok?" }], max_tokens: 5 }) }); out["model " + model] = r.status + " " + (r.ok ? "ok" : (await r.text()).slice(0, 200)) } catch (e) { out["model " + model] = e.message } }
+    }
+    res.status(200).json(out); return }
   if (req.headers["x-telegram-bot-api-secret-token"] !== secret) { res.status(401).end(); return }
   try { let u = req.body; if (typeof u === "string") u = JSON.parse(u); await handle(u) } catch (e) { console.error(e) }
   res.status(200).json({ ok: true });

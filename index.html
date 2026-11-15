@@ -569,7 +569,7 @@ const MENU_ACT={
     const st=Object.assign({},STYLE.settings||{}), g=STYLE.ground||{};
     form(`<label>Скорость <select name="speed">${OPT([[0.5,"медленно"],[1,"обычно"],[1.5,"быстрее"],[2,"быстро"],[3,"очень быстро"]],st.speed||1)}</select></label>
       <label>Время <select name="night">${OPT([["auto","как в Ташкенте"],["day","всегда день"],["night","всегда ночь"]],st.night||"auto")}</select></label>
-      <label>Погода <select name="weather">${OPT([["none","ясно"],["rain","дождь"],["snow","снег"],["leaves","листопад"]],st.weather||"none")}</select></label>
+      <label>Погода <select name="weather">${OPT([["live","как в Ташкенте"],["none","ясно"],["rain","дождь"],["snow","снег"],["leaves","листопад"]],st.weather||"live")}</select></label>
       <label>Трава <input type="color" name="grass" value="${g.grass||"#5aa04a"}"></label>
       <label>Дорожки <input type="color" name="path" value="${g.path||"#c9a46a"}"></label>
       <label>Вода <input type="color" name="water" value="${g.water||"#3f86c6"}"></label>`,
@@ -954,17 +954,50 @@ function drawDecor(d){
 /* weather */
 const WX=[];
 function weatherUpdate(dt){
-  const w=((VIS.settings||STYLE.settings)||{}).weather||"none"; if(w==="none"||scene!=="out"){WX.length=0;return}
+  const w=curWeather(); if(w==="none"||w==="fog"||w==="clouds"||scene!=="out"){WX.length=0;return}
   const n=w==="rain"?3:w==="snow"?1:w==="leaves"?0.3:0;
   for(let i=0;i<n*(dt/16);i++)WX.push({x:Math.random()*LW,y:-4,age:0});
   for(let i=WX.length-1;i>=0;i--){const p=WX[i];p.age+=dt;if(w==="rain"){p.y+=0.35*dt;p.x-=0.05*dt}else if(w==="snow"){p.y+=0.03*dt;p.x+=Math.sin(p.age/300)*0.2}else{p.y+=0.04*dt;p.x+=Math.sin(p.age/250)*0.5}if(p.y>LH+4)WX.splice(i,1)}
 }
 function weatherDraw(){
-  const w=((VIS.settings||STYLE.settings)||{}).weather||"none";
+  const w=curWeather();
+  if(w==="fog")R(0,0,LW,LH,"rgba(200,205,210,.35)"); if(w==="clouds")R(0,0,LW,LH,"rgba(90,100,115,.14)");
   for(const p of WX){if(w==="rain")R(p.x,p.y,1,4,"rgba(170,200,255,.7)");else if(w==="snow")R(p.x,p.y,2,2,"#ffffff");else R(p.x,p.y,3,2,["#d98030","#c9563c","#e0b030"][Math.floor(p.age/97)%3])}
   if(w==="rain")R(0,0,LW,LH,"rgba(40,60,90,.15)");
 }
-function nightNow(){const n=((VIS.settings||STYLE.settings)||{}).night||"auto";if(n==="day")return false;if(n==="night")return true;const h=+new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Tashkent",hour:"2-digit",hour12:false}).format(new Date());return h>=19||h<6}
+/* live: время и погода как сейчас в Ташкенте (Open-Meteo, без ключа) */
+let LIVE=null;
+async function liveFetch(){
+  try{
+    const u="https://api.open-meteo.com/v1/forecast?latitude=41.2995&longitude=69.2401&current=temperature_2m,weather_code,is_day,cloud_cover&daily=sunrise,sunset&timezone=Asia%2FTashkent&forecast_days=1";
+    const j=await fetch(u).then(r=>r.json()); const c=j.current||{};
+    const toMs=t=>t?Date.parse(t+":00+05:00"):null;
+    LIVE={t:Date.now(),temp:c.temperature_2m,code:c.weather_code,isDay:c.is_day,cloud:c.cloud_cover,sunrise:toMs(j.daily&&j.daily.sunrise&&j.daily.sunrise[0]),sunset:toMs(j.daily&&j.daily.sunset&&j.daily.sunset[0])};
+    tick();
+  }catch(e){}
+}
+liveFetch(); setInterval(liveFetch,10*60*1000);
+function liveWeather(){
+  if(!LIVE||LIVE.code==null) return "none"; const k=LIVE.code;
+  if(k>=71&&k<=77||k===85||k===86) return "snow";
+  if(k>=51&&k<=67||k>=80&&k<=82||k>=95) return "rain";
+  if(k===45||k===48) return "fog";
+  if(k===3||(LIVE.cloud||0)>80) return "clouds";
+  return "none";
+}
+function curWeather(){const w=((VIS.settings||STYLE.settings)||{}).weather||"live";return w==="live"?liveWeather():w}
+function darkness(){
+  const n=((VIS.settings||STYLE.settings)||{}).night||"auto"; if(n==="day")return 0; if(n==="night")return .42;
+  const now=Date.now();
+  if(LIVE&&LIVE.sunrise&&LIVE.sunset){const tw=40*60*1000;
+    if(now<LIVE.sunrise-tw||now>LIVE.sunset+tw) return .42;
+    if(now<LIVE.sunrise+tw) return .42*(1-(now-(LIVE.sunrise-tw))/(2*tw));
+    if(now>LIVE.sunset-tw) return .42*((now-(LIVE.sunset-tw))/(2*tw));
+    return 0;}
+  const h=+new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Tashkent",hour:"2-digit",hour12:false}).format(new Date()); return (h>=18||h<7)?.42:0;
+}
+function nightNow(){return darkness()>.25}
+function nightNowOld(){const n=((VIS.settings||STYLE.settings)||{}).night||"auto";if(n==="day")return false;if(n==="night")return true;const h=+new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Tashkent",hour:"2-digit",hour12:false}).format(new Date());return h>=19||h<6}
 function speedMul(){const s=+(((VIS.settings||STYLE.settings)||{}).speed||1);return Math.max(0.4,Math.min(4,isFinite(s)?s:1))}
 /* job runner: hides dialog, plays animation, then the caller applies change */
 const ANIMQ=[];
@@ -1117,8 +1150,8 @@ function builderTools(){
        });
        return r;
      }},
-    {name:"set_game_settings",description:"Игровые настройки: speed — скорость ходьбы человечка (1 обычная, 0.5 медленно, 2 быстро, до 4); night — auto|day|night; weather — none|rain|snow|leaves.",
-     inputSchema:{type:"object",properties:{speed:{type:"number"},night:{type:"string",enum:["auto","day","night"]},weather:{type:"string",enum:["none","rain","snow","leaves"]}}},
+    {name:"set_game_settings",description:"Игровые настройки: speed — скорость ходьбы человечка (1 обычная, 0.5 медленно, 2 быстро, до 4); night — auto|day|night; weather — live (как сейчас в Ташкенте, по умолчанию)|none|rain|snow|leaves.",
+     inputSchema:{type:"object",properties:{speed:{type:"number"},night:{type:"string",enum:["auto","day","night"]},weather:{type:"string",enum:["live","none","rain","snow","leaves"]}}},
      execute:async(inp)=>{
        const add={}; if(typeof inp.speed==="number"&&isFinite(inp.speed))add.speed=Math.max(0.4,Math.min(4,inp.speed)); if(inp.night)add.night=inp.night; if(inp.weather)add.weather=inp.weather;
        if(!Object.keys(add).length) return "ОШИБКА: нечего менять";
@@ -1323,7 +1356,7 @@ function render(){
     objs.sort((a,b)=>a.y-b.y).forEach(o=>o.d());
     drawParts();
     ctx.setTransform(S,0,0,S,0,0);
-    if(isNight())R(0,0,LW,LH,"rgba(20,24,70,.42)");
+    {const dk=darkness(); if(dk>0.01)R(0,0,LW,LH,`rgba(20,24,70,${dk.toFixed(3)})`);}
     ctx.setTransform(S,0,0,S,-CAM.x*S,-CAM.y*S);
     decorList().forEach(d=>{if(d.kind==="lamp"&&isNight()){ctx.globalAlpha=.35;R(d.tx*T-6,d.ty*T-12,28,24,"#ffe28a");ctx.globalAlpha=1}});
     ctx.setTransform(S,0,0,S,0,0);
@@ -1359,7 +1392,8 @@ function tick(){
   document.getElementById("htime").textContent=new Intl.DateTimeFormat("ru-RU",{timeZone:tz,hour:"2-digit",minute:"2-digit"}).format(d);
   const wd=new Intl.DateTimeFormat("ru-RU",{timeZone:tz,weekday:"short"}).format(d);
   const dn=new Intl.DateTimeFormat("ru-RU",{timeZone:tz,day:"numeric"}).format(d);
-  document.getElementById("hday").textContent=wd.charAt(0).toUpperCase()+wd.slice(1)+". "+dn;
+  const ic={none:"",clouds:" ☁",rain:" ☂",snow:" ❄",fog:" ≋"}[typeof liveWeather==="function"?liveWeather():"none"]||"";
+  document.getElementById("hday").textContent=wd.charAt(0).toUpperCase()+wd.slice(1)+". "+dn+(LIVE&&LIVE.temp!=null?` · ${LIVE.temp>0?"+":""}${Math.round(LIVE.temp)}°${ic}`:"");
 }
 function applyData(){
   const map=new Map(), order=[];
