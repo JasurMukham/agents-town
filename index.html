@@ -823,6 +823,7 @@ function yunaObj(){
     String(r.summary).split(/\n+/).map(t=>t.trim()).filter(Boolean).slice(0,8).forEach(t=>lines.push(t));
     lines.push("Полная версия — у тебя в Telegram.");
   } else lines.push("Первую сводку пришлю сегодня вечером — и в Telegram тоже.");
+  if(r&&Array.isArray(r.tasks)&&r.tasks.length){lines.push("Открытые задачи из группы «Важное»: "+r.tasks.length+".");r.tasks.slice(0,8).forEach(t=>lines.push("• "+t))}
   return {name:"Yuna.AI",yuna:true,look:YUNA_LOOK,lines};
 }
 function walkHome(){const h=bldHome();walkTo(h.x,h.y).then(()=>{BLD.dir="down"})}
