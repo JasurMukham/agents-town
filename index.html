@@ -138,11 +138,11 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 <div class="login" id="login">
   <form id="loginform" autocomplete="off">
     <h2>Вход в городок</h2>
-    <div>Нужен личный токен GitHub с доступом к репозиторию данных городка. Создай его один раз: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com → Fine-grained token</a>. Repository access: только репозиторий данных; Permissions → Contents: Read and write. Токен хранится только в этом браузере.</div>
+    <div>Нужен личный токен GitHub. Создай его один раз: <a href="https://github.com/settings/tokens/new?scopes=repo&amp;description=agents-town" target="_blank" rel="noopener">открыть страницу токена</a> → внизу «Generate token» → скопируй и вставь сюда. Токен хранится только в этом браузере.</div>
     <label for="lrepo">Репозиторий данных</label>
     <input id="lrepo" value="JasurMukham/agents-town-data">
     <label for="ltoken">Токен</label>
-    <input id="ltoken" type="password" placeholder="github_pat_…">
+    <input id="ltoken" type="password" placeholder="ghp_…">
     <div class="err" id="lerr"></div>
     <button type="submit">Войти</button>
   </form>
