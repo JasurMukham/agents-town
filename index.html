@@ -384,6 +384,7 @@ function interactables(){
     const b=builderPos(); if(BUILDER&&!JOB&&!BLD.hidden) list.push({x:b.x,y:b.y-6,obj:{...BUILDER,builder:true,mine:true},label:"поговорить: твой Строитель"});
     OTHER_B.forEach(ob=>list.push({x:ob.x,y:ob.y-6,obj:{...ob.data,builder:true,mine:false},label:"поговорить: "+ob.data.name}));
     if(YUNA.inited&&!YUNA.hidden) list.push({x:YUNA.x,y:YUNA.y-6,obj:yunaObj(),label:"поговорить: Yuna.AI"});
+    list.push({x:LOLA.x,y:LOLA.y-6,obj:lolaObj(),label:"поговорить: Лола"});
     decorList().forEach(d=>{if(d.kind==="bench")list.push({x:(d.tx+.5)*T,y:d.ty*T+10,obj:{bench:d,lines:[]},label:"сесть на лавочку"})});
     return list;
   }
@@ -440,8 +441,8 @@ const BUILDER_LOOK={shirt:"#e0b030",hair:"#5a3a22",skin:"#e8b48a"};
 function drawPortrait(o){
   pctx.clearRect(0,0,48,48);
   const r=(x,y,w,h,c)=>{pctx.fillStyle=c;pctx.fillRect(x,y,w,h)};
-  const L=o.builder?BUILDER_LOOK:(o.yuna?YUNA_LOOK:(o.look?ALOOK(o):null));
-  const bg=o.yuna?"#cdb8ef":o.builder?"#f2d58a":({ok:"#bfe0b0",bad:"#f0b8a8",idle:"#c9ccd6",off:"#d8c8b0",work:"#b8d8f0"})[o.st]||"#e9d3a8";
+  const L=o.lola?LOLA_LOOK:o.builder?BUILDER_LOOK:(o.yuna?YUNA_LOOK:(o.look?ALOOK(o):null));
+  const bg=o.lola?"#f7a8c4":o.yuna?"#cdb8ef":o.builder?"#f2d58a":({ok:"#bfe0b0",bad:"#f0b8a8",idle:"#c9ccd6",off:"#d8c8b0",work:"#b8d8f0"})[o.st]||"#e9d3a8";
   r(0,0,48,48,bg); for(let y=0;y<48;y+=4) r(0,y,48,2,shade(bg,.96)); r(0,40,48,8,shade(bg,.88));
   if(!L){ // sign / board
     r(9,9,30,24,"#6b4423"); r(11,11,26,20,"#e9c98f"); r(11,11,26,2,"#f6e3b8");
@@ -449,13 +450,14 @@ function drawPortrait(o){
     r(22,33,4,15,"#6b4423"); r(22,33,1,15,"#8a5a2c"); return;
   }
   const skin=L.skin||"#e8b48a", sk2=shade(skin,.82), hair=L.hair||"#3a2a20", h2=shade(hair,.72), h3=shade(hair,1.25), sh=L.shirt||"#888", sh2=shade(sh,.78);
-  const hs=o.yuna?"long":o.builder?"cap":(["short","side","long","bun","curly"])[Math.abs(String(o.id||o.name||"").split("").reduce((a,c)=>a*31+c.charCodeAt(0)|0,7))%5];
+  const hs=(o.yuna||o.lola)?"long":o.builder?"cap":(["short","side","long","bun","curly"])[Math.abs(String(o.id||o.name||"").split("").reduce((a,c)=>a*31+c.charCodeAt(0)|0,7))%5];
   // long hair behind
   if(hs==="long"){r(11,12,26,24,h2);r(12,12,24,22,hair)}
   // shoulders + shirt
   r(8,38,32,10,sh2); r(9,37,30,11,sh); r(9,37,30,1,shade(sh,1.15));
   r(20,35,8,4,sk2); r(21,35,6,3,skin); r(19,37,3,4,shade(sh,1.2)); r(26,37,3,4,shade(sh,1.2));
   if(o.yuna){r(23,39,2,2,"#9b6fe0")}
+  if(o.lola){r(9,37,30,11,skin);r(12,41,24,7,"#e0203a");r(14,40,8,2,"#e0203a");r(26,40,8,2,"#e0203a");r(14,37,2,4,"#e0203a");r(32,37,2,4,"#e0203a");r(22,42,4,1,sk2);r(10,13,28,4,hair);r(9,16,4,22,hair);r(35,16,4,22,hair);r(30,38,4,4,"#ffd84a")}
   // head
   r(14,13,20,23,sk2); r(15,13,18,22,skin); r(13,22,2,6,sk2); r(33,22,2,6,sk2); r(17,35,14,1,sk2);
   // hair
@@ -475,7 +477,8 @@ function drawPortrait(o){
   else{ r(18,23,4,4,"#ffffff"); r(26,23,4,4,"#ffffff"); r(19,23,3,4,"#2a1a2a"); r(27,23,3,4,"#2a1a2a"); r(19,23,1,1,"#ffffff"); r(27,23,1,1,"#ffffff") }
   r(23,27,2,2,sk2);
   r(16,28,3,2,"rgba(230,110,110,.35)"); r(29,28,3,2,"rgba(230,110,110,.35)");
-  if(sad){r(21,31,6,1,"#7a3a2a");r(20,32,1,1,"#7a3a2a");r(27,32,1,1,"#7a3a2a")}
+  if(o.lola){r(17,22,6,1,"#1a1010");r(25,22,6,1,"#1a1010");r(18,21,4,1,"#b06ad0");r(26,21,4,1,"#b06ad0");r(30,24,1,1,"#3a2a2a");r(20,30,8,2,"#e0103a");r(21,30,6,1,"#ff4a6a");r(40,5,3,3,"#e0103a");r(43,5,3,3,"#e0103a");r(40,8,6,2,"#e0103a");r(41,10,4,1,"#e0103a");r(42,11,2,1,"#e0103a")}
+  else if(sad){r(21,31,6,1,"#7a3a2a");r(20,32,1,1,"#7a3a2a");r(27,32,1,1,"#7a3a2a")}
   else {r(21,30,6,1,"#8a3a2a");r(22,31,4,1,"#b85a4a")}
   if(o.st==="work"){ r(36,4,9,7,"#ffffff"); r(37,6,2,1,"#3e7cc9"); r(40,6,2,1,"#3e7cc9"); r(38,8,4,1,"#3e7cc9"); r(37,11,2,2,"#ffffff") }
   // frame
@@ -493,6 +496,7 @@ function openDlg(obj,reply){
 function hideMenu(){$menu.classList.remove("show");$menu.innerHTML=""}
 function showMenu(o){
   hideMenu();
+  if(o.lola) return lolaMenu();
   if(o.builder&&o.mine) return builderMenu();
   if(o.id&&o.owner===ME.login&&o.look) return agentMenu(o);
 }
@@ -825,6 +829,60 @@ function yunaObj(){
   } else lines.push("Первую сводку пришлю сегодня вечером — и в Telegram тоже.");
   if(r&&Array.isArray(r.tasks)&&r.tasks.length){lines.push("Открытые задачи из группы «Важное»: "+r.tasks.length+".");r.tasks.slice(0,8).forEach(t=>lines.push("• "+t))}
   return {name:"Yuna.AI",yuna:true,look:YUNA_LOOK,lines};
+}
+
+/* ---------- Лола: очень общительная ночная бабочка у фонаря, флиртует со всеми ---------- */
+const LOLA={x:30*16,y:16.9*16};
+const LOLA_LOOK={shirt:"#e0203a",hair:"#f6d24a",skin:"#f2c6a0"};
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const LOLA_HI=["Ой, приве-ет, красавчик 💋 Я Лола. Подойди поближе, я не кусаюсь… почти.","Ммм, кто это тут такой симпатичный гуляет? 😘","Наконец-то кто-то интересный! Я Лола, а ты — моё лучшее событие за вечер 💄"];
+const LOLA_R={
+  hi:["Привет, сладкий 😘 Я уже думала, ты мимо пройдёшь.","Ну наконец-то! Я тебя ещё от фонтана заметила 💋","Приветик! Ты всегда такой красивый или это ради меня?"],
+  how:["Теперь, когда ты тут — просто отлично 😏","Стояла, скучала… а тут ты. Вечер спасён!","Ноги устали на каблуках, но ради тебя ещё постою 💃"],
+  comp:["Глаза у тебя — опасные. Утонуть можно 😍","С такой улыбкой тебе бы в кино, а не по офисам ходить.","Ты так уверенно ходишь — сразу видно, начальник 😏"],
+  dance:["Потанцуем? Только веди ты — я люблю, когда мужчина уверенный 💃","Музыки нет? Ничего, я под тебя станцую 🎶","Ох, я на этих каблуках могу и в тебя упасть… специально 😘"],
+  date:["Свидание? Ммм… приводи кофе и комплименты — и я твоя на весь вечер ☕","Я знаю тут лавочку с лучшим видом на фонтан. Пойдём? 💕","Только если ты платишь за пиццу 🍕😉"],
+  wink:["😉 Ой, а я тоже так умею! 😉😉","Подмигнул? Всё, я покраснела 💗","Осторожно, я на такое быстро ведусь 😏"],
+  bye:["Уже уходишь? Возвращайся, я тут каждый вечер 💋","Пока-пока, красавчик! Не забывай Лолу 😘","Беги, но знай: я буду скучать 💔"]
+};
+function lolaObj(){return {name:"Лола 💋",lola:true,look:LOLA_LOOK,lines:[pick(LOLA_HI)]}}
+function lolaMenu(){
+  $menu.innerHTML=[["hi","👋 Привет, красавица"],["how","Как дела?"],["comp","Сделай комплимент"],["dance","Потанцуем?"],["date","Пойдём на свидание?"],["wink","😉 Подмигнуть"],["bye","Пока!"]]
+    .map(([k,t])=>`<button type="button" data-l="${k}">${t}</button>`).join("");
+  $menu.classList.add("show");
+  $menu.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+    const k=b.dataset.l; say(pick(LOLA_R[k]));
+    if(k==="bye") setTimeout(()=>{if(dlg.open&&dlg.obj&&dlg.obj.lola)closeDlg()},2600);
+    if(k!=="bye") puff(LOLA.x,LOLA.y-26,"#ff5a8a",5,"dot");
+  });
+}
+function drawLola(){
+  const x=Math.round(LOLA.x),y=Math.round(LOLA.y),L=LOLA_LOOK,talk=dlg.open&&dlg.obj&&dlg.obj.lola;
+  const sway=talk?0:(((frame>>5)%4)===1?1:0);
+  // street lamp behind her
+  const lx=x+11; R(lx,y-34,2,34,"#3a3a46"); R(lx-3,y-38,8,4,"#3a3a46"); R(lx-2,y-35,6,2,"#ffd0e0");
+  if(isNight()){ctx.globalAlpha=.3;R(lx-9,y-34,20,34,"#ff7aa8");ctx.globalAlpha=1}
+  R(x-6,y-1,12,3,"rgba(0,0,0,.22)");
+  // red high heels
+  R(x-4,y-2,3,2,"#c0102a"); R(x+1+sway,y-2,3,2,"#c0102a"); R(x-4,y,1,1,"#c0102a"); R(x+3+sway,y,1,1,"#c0102a");
+  // long legs in fishnet stockings
+  R(x-3,y-10,2,8,"#2a1a2a"); R(x+1+sway,y-10,2,8,"#2a1a2a");
+  for(let i=0;i<8;i+=2){R(x-3+(i%4?1:0),y-10+i,1,1,L.skin);R(x+1+sway+(i%4?0:1),y-10+i,1,1,L.skin)}
+  // tiny red mini dress
+  R(x-4,y-15,8,5,L.shirt); R(x-5,y-11,10,2,L.shirt); R(x-4,y-15,8,1,"#ff4a5a"); R(x-1,y-15,2,1,L.skin);
+  // bare shoulders, straps, arms (hand on hip)
+  R(x-4,y-17,8,2,L.skin); R(x-3,y-17,1,2,L.shirt); R(x+2,y-17,1,2,L.shirt);
+  R(x-6,y-16,2,4,L.skin); R(x-5,y-12,2,1,L.skin); R(x+4,y-16,2,6,L.skin);
+  // pink handbag
+  R(x+5,y-11,4,3,"#ff6ab0"); R(x+6,y-12,2,1,"#c0408a");
+  // head + big blonde hair
+  R(x-6,y-26,12,4,L.hair); R(x-7,y-23,3,9,L.hair); R(x+4,y-23,3,9,L.hair);
+  R(x-4,y-24,8,8,L.skin); R(x-5,y-26,10,3,L.hair); R(x-3,y-27,6,1,"#fff08a");
+  R(x-4,y-21,2,1,"#1a1010"); R(x+2,y-21,2,1,"#1a1010"); R(x-4,y-22,2,1,"#b06ad0"); R(x+2,y-22,2,1,"#b06ad0");
+  R(x-2,y-18,4,1,"#e0103a"); R(x-4,y-19,1,1,"rgba(230,90,110,.6)"); R(x+3,y-19,1,1,"rgba(230,90,110,.6)");
+  R(x+3,y-20,1,1,"#3a2a2a");
+  // floating hearts
+  if(talk||(frame>>4)%5===0){const h=(frame>>2)%10; R(x-8,y-32-h,2,2,"#ff3a6a");R(x-6,y-32-h,2,2,"#ff3a6a");R(x-7,y-30-h,2,1,"#ff3a6a")}
 }
 function walkHome(){const h=bldHome();walkTo(h.x,h.y).then(()=>{BLD.dir="down"})}
 function puff(x,y,c,n,kind){for(let i=0;i<n;i++)PARTS.push({x,y,vx:(Math.random()-.5)*0.06,vy:-Math.random()*0.06-0.01,life:600+Math.random()*500,age:0,c,kind:kind||"dot",s:1+Math.random()*2})}
@@ -1258,6 +1316,7 @@ function render(){
     objs.push({y:P.sit?P.y+0.5:P.y,d:drawPlayer});
     if(BUILDER) objs.push({y:builderPos().y,d:drawBuilder});
     objs.push({y:YUNA.y,d:drawYuna});
+    objs.push({y:LOLA.y,d:drawLola});
     OTHER_B.forEach(ob=>objs.push({y:ob.y,d:()=>drawBuilderAt(ob)}));
     othersHere().forEach(o=>objs.push({y:o.y,d:()=>drawPlayerAt(o,Object.assign({},DEFAULT_PLAYER,o.look||{},{name:(o.look&&o.look.name)||ownerName(o.login)}))}));
     decorList().forEach(d=>objs.push({y:d.ty*T+(d.kind==="flowers"?0:15),d:()=>drawDecor(d)}));
