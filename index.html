@@ -264,7 +264,6 @@ const LCV=document.createElement("canvas"), LCX=LCV.getContext("2d");
 function lightSources(){
   const L=LAMPS.map(l=>({x:l.tx*T+8,y:l.ty*T-16,r:58}));
   decorList().forEach(d=>{if(d.kind==="lamp")L.push({x:d.tx*T+8,y:d.ty*T-16,r:58})});
-  if(typeof LOLA!=="undefined") L.push({x:LOLA.x+11,y:LOLA.y-30,r:58});
   plots.forEach(p=>{if(p.kind==="office"){const sl=p.slot;[[sl.x+1.2,sl.y+2.4],[sl.x+4.8,sl.y+2.4]].forEach(([a,b])=>L.push({x:a*T,y:b*T,r:16,win:true}))}});
   return L;
 }
@@ -898,7 +897,8 @@ function drawLola(){
   const x=Math.round(LOLA.x),y=Math.round(LOLA.y),L=LOLA_LOOK,talk=dlg.open&&dlg.obj&&dlg.obj.lola;
   const sway=talk?0:(((frame>>5)%4)===1?1:0);
   // street lamp behind her
-  drawStreetLamp((x+11-8)/T,(y-14)/T);
+  const lx=x+11; R(lx,y-34,2,34,"#3a3a46"); R(lx-3,y-38,8,4,"#3a3a46"); R(lx-2,y-35,6,2,"#ffd0e0");
+  if(isNight()){ctx.globalAlpha=.3;R(lx-9,y-34,20,34,"#ff7aa8");ctx.globalAlpha=1}
   R(x-6,y-1,12,3,"rgba(0,0,0,.22)");
   // red high heels
   R(x-4,y-2,3,2,"#c0102a"); R(x+1+sway,y-2,3,2,"#c0102a"); R(x-4,y,1,1,"#c0102a"); R(x+3+sway,y,1,1,"#c0102a");
