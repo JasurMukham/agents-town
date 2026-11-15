@@ -416,12 +416,13 @@ function boardObj(off){
   return {name:"Доска смен",lines};
 }
 function interactables(){
+  if(scene==="love") return [];
   if(scene==="out"){
     const list=signs.map(s=>({x:(s.tx+.5)*T,y:(s.ty+.5)*T,obj:s.obj,label:s.label}));
     const b=builderPos(); if(BUILDER&&!JOB&&!BLD.hidden) list.push({x:b.x,y:b.y-6,obj:{...BUILDER,builder:true,mine:true},label:"поговорить: твой Строитель"});
     OTHER_B.forEach(ob=>list.push({x:ob.x,y:ob.y-6,obj:{...ob.data,builder:true,mine:false},label:"поговорить: "+ob.data.name}));
     if(YUNA.inited&&!YUNA.hidden) list.push({x:YUNA.x,y:YUNA.y-6,obj:yunaObj(),label:"поговорить: Yuna.AI"});
-    list.push({x:LOLA.x,y:LOLA.y-6,obj:lolaObj(),label:"поговорить: Лола"});
+    if(!LOVE.on) list.push({x:LOLA.x,y:LOLA.y-6,obj:lolaObj(),label:"поговорить: Лола"});
     decorList().forEach(d=>{if(d.kind==="bench")list.push({x:(d.tx+.5)*T,y:d.ty*T+10,obj:{bench:d,lines:[]},label:"сесть на лавочку"})});
     return list;
   }
@@ -533,7 +534,7 @@ function openDlg(obj,reply){
 function hideMenu(){$menu.classList.remove("show");$menu.innerHTML=""}
 function showMenu(o){
   hideMenu();
-  if(o.lola) return lolaMenu();
+  if(o.lola&&!o.nomenu) return lolaMenu();
   if(o.builder&&o.mine) return builderMenu();
   if(o.id&&o.owner===ME.login&&o.look) return agentMenu(o);
 }
@@ -869,7 +870,8 @@ function yunaObj(){
 }
 
 /* ---------- Лола: очень общительная ночная бабочка у фонаря, флиртует со всеми ---------- */
-const LOLA={x:30*16,y:16.9*16};
+const LOLA_HOME={x:30*16,y:16.9*16};
+const LOLA={x:LOLA_HOME.x,y:LOLA_HOME.y,hidden:false,walk:false};
 const LOLA_LOOK={shirt:"#e0203a",hair:"#f6d24a",skin:"#f2c6a0"};
 const pick=a=>a[Math.floor(Math.random()*a.length)];
 const LOLA_HI=["Ой, приве-ет, красавчик 💋 Я Лола. Подойди поближе, я не кусаюсь… почти.","Ммм, кто это тут такой симпатичный гуляет? 😘","Наконец-то кто-то интересный! Я Лола, а ты — моё лучшее событие за вечер 💄"];
@@ -884,21 +886,25 @@ const LOLA_R={
 };
 function lolaObj(){return {name:"Лола 💋",lola:true,look:LOLA_LOOK,lines:[pick(LOLA_HI)]}}
 function lolaMenu(){
-  $menu.innerHTML=[["hi","👋 Привет, красавица"],["how","Как дела?"],["comp","Сделай комплимент"],["dance","Потанцуем?"],["date","Пойдём на свидание?"],["wink","😉 Подмигнуть"],["bye","Пока!"]]
+  $menu.innerHTML=[["hi","👋 Привет, красавица"],["how","Как дела?"],["comp","Сделай комплимент"],["dance","Потанцуем?"],["date","Пойдём на свидание?"],["wink","😉 Подмигнуть"],["hq","🏠 Пригласить в штаб"],["bye","Пока!"]]
     .map(([k,t])=>`<button type="button" data-l="${k}">${t}</button>`).join("");
   $menu.classList.add("show");
   $menu.querySelectorAll("button").forEach(b=>b.onclick=()=>{
-    const k=b.dataset.l; say(pick(LOLA_R[k]));
+    const k=b.dataset.l;
+    if(k==="hq"){say(pick(["В штаб? Ммм, веди, красавчик 😘","Ой, а я думала, ты никогда не позовёшь 💋 Пошли!","Штаб… звучит серьёзно. Мне нравится 😏 Идём!"]));hideMenu();setTimeout(()=>{closeDlg();loveStart()},1800);return}
+    say(pick(LOLA_R[k]));
     if(k==="bye") setTimeout(()=>{if(dlg.open&&dlg.obj&&dlg.obj.lola)closeDlg()},2600);
     if(k!=="bye") puff(LOLA.x,LOLA.y-26,"#ff5a8a",5,"dot");
   });
 }
 function drawLola(){
-  const x=Math.round(LOLA.x),y=Math.round(LOLA.y),L=LOLA_LOOK,talk=dlg.open&&dlg.obj&&dlg.obj.lola;
-  const sway=talk?0:(((frame>>5)%4)===1?1:0);
-  // street lamp behind her
-  const lx=x+11; R(lx,y-34,2,34,"#3a3a46"); R(lx-3,y-38,8,4,"#3a3a46"); R(lx-2,y-35,6,2,"#ffd0e0");
-  if(isNight()){ctx.globalAlpha=.3;R(lx-9,y-34,20,34,"#ff7aa8");ctx.globalAlpha=1}
+  {const x=LOLA_HOME.x,y=LOLA_HOME.y; const lx=x+11; R(lx,y-34,2,34,"#3a3a46"); R(lx-3,y-38,8,4,"#3a3a46"); R(lx-2,y-35,6,2,"#ffd0e0");
+  if(isNight()){ctx.globalAlpha=.3;R(lx-9,y-34,20,34,"#ff7aa8");ctx.globalAlpha=1}}
+  if(!LOLA.hidden) drawLolaAt(LOLA.x,LOLA.y,LOLA.walk);
+}
+function drawLolaAt(px,py,walking){
+  const x=Math.round(px),y=Math.round(py),L=LOLA_LOOK,talk=dlg.open&&dlg.obj&&dlg.obj.lola;
+  const sway=walking?((frame>>3)%2):talk?0:(((frame>>5)%4)===1?1:0);
   R(x-6,y-1,12,3,"rgba(0,0,0,.22)");
   // red high heels
   R(x-4,y-2,3,2,"#c0102a"); R(x+1+sway,y-2,3,2,"#c0102a"); R(x-4,y,1,1,"#c0102a"); R(x+3+sway,y,1,1,"#c0102a");
@@ -1315,6 +1321,104 @@ async function sendChat(){
   setTimeout(()=>$in.focus(),0);
 }
 
+/* ---------- Свидание с Лолой: идут вместе в Штаб, спальня ---------- */
+const LOVE={on:false,phase:"",path:[],trail:[],t:0,hq:-1};
+function loveStart(){
+  let hq=OFFICES.findIndex(o=>o.id==="hq"||/штаб/i.test(o.name||"")); if(hq<0) hq=0;
+  if(!OFFICES.length||scene!=="out"){return}
+  if(P.sit) standUp();
+  const D=yunaDoor(hq), rows=[8,16,24].map(r=>r*T+8), cols=[11,22,33].map(c=>c*T+8);
+  const r0=rows.reduce((m,v)=>Math.abs(v-P.y)<Math.abs(m-P.y)?v:m,rows[0]);
+  const pts=[{x:P.x,y:r0}];
+  if(Math.abs(r0-D.ry)>2){const c=cols.reduce((m,v)=>Math.abs(v-P.x)+Math.abs(v-D.x)<Math.abs(m-P.x)+Math.abs(m-D.x)?v:m,cols[0]);pts.push({x:c,y:r0},{x:c,y:D.ry})}
+  pts.push({x:D.x,y:D.ry},{x:D.x,y:D.y-6});
+  Object.assign(LOVE,{on:true,phase:"walk",path:pts,trail:[],t:0,hq}); TAP=null;
+}
+function loveUpdate(dt){
+  LOVE.t+=dt;
+  if(LOVE.phase==="walk"){
+    const t=LOVE.path[0];
+    if(!t){LOVE.phase="enter";lastDoor=LOVE.hq;fadeTo="love";LOVE.t=0;LOLA.hidden=true;return}
+    const dx=t.x-P.x,dy=t.y-P.y,d=Math.hypot(dx,dy),sp=0.06*dt;
+    P.moving=true;P.step+=dt/16;
+    if(Math.abs(dx)>Math.abs(dy))P.dir=dx<0?"left":"right"; else P.dir=dy<0?"up":"down";
+    if(d<=sp){P.x=t.x;P.y=t.y;LOVE.path.shift()} else {P.x+=dx/d*sp;P.y+=dy/d*sp}
+    LOVE.trail.push({x:P.x,y:P.y}); if(LOVE.trail.length>16){const q=LOVE.trail.shift();LOLA.x=q.x;LOLA.y=q.y+1;LOLA.walk=true}
+    if(Math.random()<0.04) puff(LOLA.x,LOLA.y-26,"#ff5a8a",2,"dot");
+    return;
+  }
+  if(LOVE.phase==="enter"){LOVE.phase="room";LOVE.t=0;$place.textContent="Штаб · Спальня 💋";return}
+  if(LOVE.phase==="room"){
+    if(LOVE.t>16500){LOVE.phase="bye";openDlg({name:"Лола 💋",lola:true,nomenu:true,look:LOLA_LOOK,lines:[pick(["Ммм… это было волшебно 💋","Ох, красавчик… я теперь твоя постоянная гостья 😘","Вот это штаб… вот это совещание 😏"]),"Проводишь меня до фонаря? Заходи ещё 😘"]})}
+    else if(Math.random()<(LOVE.t>3000&&LOVE.t<13000?0.12:0.03)) puff(LW/2+(Math.random()-.5)*60,150,Math.random()<.5?"#ff3a6a":"#ff9ac0",1,"dot");
+    return;
+  }
+  if(LOVE.phase==="bye"){LOVE.phase="out";lastDoor=LOVE.hq;fadeTo="out";return}
+  if(LOVE.phase==="out"){LOVE.on=false;LOLA.x=LOLA_HOME.x;LOLA.y=LOLA_HOME.y;LOLA.hidden=false;LOLA.walk=false;placeLabel()}
+}
+function drawLoveRoom(){
+  const t=LOVE.t, W=LW, H=LH, cx=W/2;
+  // wall: deep red wallpaper with hearts
+  R(0,0,W,H,"#5a0f1e");
+  for(let y=6;y<150;y+=18)for(let x=(y/18%2)*12;x<W;x+=24){R(x+2,y,2,2,"#7a1a30");R(x+5,y,2,2,"#7a1a30");R(x+2,y+2,5,2,"#7a1a30");R(x+3,y+4,3,1,"#7a1a30")}
+  R(0,148,W,4,"#3a0812");
+  // floor
+  R(0,152,W,H-152,"#6b3a24"); for(let y=152;y<H;y+=10){R(0,y,W,1,"#5a2e1c")} for(let y=152,i=0;y<H;y+=10,i++)for(let x=(i%2)*20;x<W;x+=40)R(x,y,1,10,"#5a2e1c");
+  // window with moon
+  R(40,30,60,50,"#2a1830"); R(42,32,56,46,"#1a1640"); R(70,32,2,46,"#2a1830"); R(42,54,56,2,"#2a1830"); R(52,38,9,9,"#fff3c0"); R(55,38,6,6,"#1a1640");
+  R(36,28,8,60,"#a01830"); R(96,28,8,60,"#a01830");
+  // candles
+  [[W-90,120],[W-70,124],[60,124]].forEach(([x,y],i)=>{R(x,y,4,10,"#fff0d0");R(x+1,y-3-((frame>>3)+i)%2,2,3,"#ffb030");R(x+1,y-2,2,1,"#fff4a0");ctx.globalAlpha=.18;R(x-10,y-14,24,24,"#ffb060");ctx.globalAlpha=1});
+  // rug + petals
+  R(cx-80,215,160,50,"#c03a6a"); R(cx-76,219,152,42,"#e05a8a");
+  for(let i=0;i<14;i++){const px=cx-70+hash(i,3)*140,py=222+hash(i,9)*34;R(px,py,3,2,"#b0102a")}
+  // bed: heart headboard
+  const bx=cx-44, by=110;
+  R(cx-30,by-26,24,24,"#c0102a");R(cx+6,by-26,24,24,"#c0102a");R(cx-34,by-18,68,18,"#c0102a");R(cx-26,by,52,8,"#c0102a");R(cx-16,by+8,32,6,"#c0102a");
+  R(cx-26,by-24,8,4,"#e8405a");R(cx+10,by-24,8,4,"#e8405a");
+  R(bx,by,88,8,"#7a0a1a"); R(bx-2,by+8,92,70,"#8a0c20"); R(bx,by+8,88,64,"#f4e8ec");
+  R(bx+8,by+12,30,14,"#ffffff"); R(bx+50,by+12,30,14,"#ffffff"); R(bx+8,by+24,30,2,"#e0d0d8"); R(bx+50,by+24,30,2,"#e0d0d8");
+  const inBed=t>2600, wild=t>3200&&t<13200;
+  // heads on pillows after
+  if(t>13200){
+    drawHead(bx+23,by+22,PL().skin||"#e8b48a",PL().hair||"#3a2a20",false); drawHead(bx+65,by+22,LOLA_LOOK.skin,LOLA_LOOK.hair,true);
+  }
+  // blanket
+  if(inBed){
+    const k=wild?t*0.022:0, a=wild?Math.sin(k)*6:0, b=wild?Math.sin(k*1.3+1)*5:0, c=wild?Math.cos(k*0.9)*4:0;
+    const top=by+(t>13200?28:18);
+    R(bx-1,top+8,90,by+74-top-8,"#c0102a");
+    R(bx+10+c,top+2-a,32,14+a,"#c0102a"); R(bx+44-c,top+2-b,34,14+b,"#c0102a");
+    R(bx+28,top-Math.max(a,b)*0.8,30,12,"#c0102a");
+    R(bx-1,top+8,90,2,"#e0304a"); R(bx+12+c,top+2-a,28,2,"#e0304a"); R(bx+46-c,top+2-b,30,2,"#e0304a");
+    R(bx-1,by+70,90,4,"#900a1c");
+    if(wild){ // shoes peeking out
+      if((t>>9)%3===0){R(bx+30,by+74,5,3,"#2a2a3a");R(bx+52,by+74,4,3,"#c0102a")}
+      if((t>>10)%2===0){ctx.fillStyle="#fff";ctx.font="bold 8px monospace";ctx.fillText(["скрип","ой!","хи-хи","♥","ммм"][(t>>10)%5],bx+70+Math.sin(t*0.01)*4,by-4-((t>>4)%10))}
+      ctx.fillStyle="#ff3a6a";ctx.font="10px monospace";ctx.fillText("♥",bx+20+Math.sin(t*0.005)*30,by-10-((t>>3)%30));
+    }
+    if(t>13200){ctx.fillStyle="#ffd0e0";ctx.font="bold 9px monospace";ctx.fillText("♥ ♥ ♥",cx-14,by-34)}
+  } else {
+    // standing by the bed
+    const w=t<1800;
+    const px=w?cx-110+t*0.03:cx-56, lx=w?cx-128+t*0.03:cx-74;
+    drawPlayerAt({x:px,y:200,dir:"right",step:t/16,moving:w},PL());
+    drawLolaAt(lx+40,200,w);
+    if(t>1800){ctx.fillStyle="#ff3a6a";ctx.font="12px monospace";ctx.fillText("♥",cx-40,170-((t-1800)>>5)%20)}
+  }
+  // romantic dim glow
+  ctx.globalAlpha=.16;R(0,0,W,H,"#ff2a6a");ctx.globalAlpha=1;
+  ctx.globalAlpha=.35;R(0,0,W,16,"#000");R(0,H-16,W,16,"#000");R(0,0,16,H,"#000");R(W-16,0,16,H,"#000");ctx.globalAlpha=1;
+  drawParts();
+}
+function drawHead(x,y,skin,hair,lola){
+  if(lola){R(x-8,y-6,16,4,hair);R(x-9,y-3,3,10,hair);R(x+6,y-3,3,10,hair)}
+  R(x-6,y-4,12,10,skin); R(x-6,y-6,12,3,hair);
+  R(x-3,y,2,1,"#1a1010");R(x+1,y,2,1,"#1a1010");
+  if(lola)R(x-1,y+3,3,1,"#e0103a"); else R(x-1,y+3,3,1,"#8a3a2a");
+  R(x-5,y+2,2,1,"rgba(230,90,110,.7)");R(x+3,y+2,2,1,"rgba(230,90,110,.7)");
+}
+
 /* ---------- loop ---------- */
 const $place=document.getElementById("place");
 let last=performance.now();
@@ -1329,6 +1433,7 @@ function update(dt){
     document.getElementById("dnext").textContent = dlg.busy?"думает…": dlg.shown>=line.length ? (dlg.i<lines.length-1?"▼ дальше":(($menu.classList.contains("show"))?"выбери ниже · Esc — выйти":"✕ закрыть")) : "";
     P.moving=false; $pr.style.display="none"; return;
   }
+  if(LOVE.on){P.moving=false;$pr.style.display="none";if(fadeTo===null)loveUpdate(dt);return}
   if(fadeTo!==null) return;
   if(P.sit){
     if(scene!=="out"||keys.left||keys.right||keys.up||keys.down||(TAP&&!TAP.act)) standUp();
@@ -1396,6 +1501,8 @@ function render(){
     ctx.setTransform(S,0,0,S,0,0);
     drawLighting();
     weatherDraw();
+  } else if(scene==="love"){
+    CAM.x=0;CAM.y=0; drawLoveRoom();
   } else {
     CAM.x=0;CAM.y=0;
     const Z=1.27; ctx.setTransform(S*Z,0,0,S*Z,-LW*(Z-1)/2*S,-LH*(Z-1)/2*S);
