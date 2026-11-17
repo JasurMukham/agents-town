@@ -83,7 +83,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 <div class="wrap">
   <div class="top">
     <h1>Городок агентов</h1>
-    <div class="help">Ходить: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> или стрелки · говорить: <kbd>E</kbd> / <kbd>Пробел</kbd> · на лавочке: сесть — <kbd>E</kbd> или клик, действия <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> · Строитель и агенты слушают тебя · в дверь — просто зайди · с телефона: держи палец, куда идти, нажми на человека — поговорить</div>
+    <div class="help">Ходить: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> или стрелки · говорить: <kbd>E</kbd> / <kbd>Пробел</kbd> · на лавочке: сесть — <kbd>E</kbd> или клик, действия <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> · Строитель и агенты слушают тебя · в дверь — просто зайди, на другой этаж — по лестнице слева · с телефона: держи палец, куда идти, нажми на человека — поговорить</div>
   </div>
   <div class="screen" id="screen">
     <canvas id="game" aria-label="Игровой экран: городок с офисами агентов"></canvas>
@@ -239,7 +239,7 @@ function buildMap(){
       out[sl.y+3][sl.x+2]="d";out[sl.y+3][sl.x+3]="d";doorOf[sl.y+3][sl.x+2]=i;doorOf[sl.y+3][sl.x+3]=i;
       plots.push({kind:"office",slot:sl,office:off,idx:i});
       const who=(off.owners||[]).map(ownerName).join(" и ");
-      out[sl.sy][sl.sx]="s"; signs.push({tx:sl.sx,ty:sl.sy,obj:{name:off.name,lines:[`${off.name}. Хозяин: ${who||"—"}. Агентов: ${off.agents.length}${(off.rooms&&off.rooms.length>1)?`, комнат: ${off.rooms.length}`:""}. Заходи!`]},color:"#e9c98f",label:"прочитать вывеску"});
+      out[sl.sy][sl.sx]="s"; signs.push({tx:sl.sx,ty:sl.sy,obj:{name:off.name,lines:[`${off.name}. Хозяин: ${who||"—"}. Агентов: ${off.agents.length}${(off.rooms&&off.rooms.length>1)?`, этажей: ${off.rooms.length}`:""}. Заходи!`]},color:"#e9c98f",label:"прочитать вывеску"});
     } else if(siteSlot===null){
       siteSlot=sl;
       for(let y=sl.y;y<sl.y+4;y++)for(let x=sl.x;x<sl.x+6;x++)out[y][x]="f";
@@ -264,7 +264,7 @@ const LCV=document.createElement("canvas"), LCX=LCV.getContext("2d");
 function lightSources(){
   const L=LAMPS.map(l=>({x:l.tx*T+8,y:l.ty*T-16,r:58}));
   decorList().forEach(d=>{if(d.kind==="lamp")L.push({x:d.tx*T+8,y:d.ty*T-16,r:58})});
-  plots.forEach(p=>{if(p.kind==="office"){const sl=p.slot;[[sl.x+1.2,sl.y+2.4],[sl.x+4.8,sl.y+2.4]].forEach(([a,b])=>L.push({x:a*T,y:b*T,r:16,win:true}))}});
+  plots.forEach(p=>{if(p.kind==="office"){const sl=p.slot;[[sl.x+1.2,sl.y+2.4],[sl.x+4.8,sl.y+2.4]].forEach(([a,b])=>L.push({x:a*T,y:b*T,r:16,win:true}));for(let f=1;f<floorsN(p.office);f++)[1.2,3.2,5.2].forEach(a=>L.push({x:(sl.x+a)*T-3,y:sl.y*T+30-f*FLOOR_H,r:14,win:true}))}});
   return L;
 }
 function drawLighting(){
@@ -301,12 +301,20 @@ function curOffice(){return typeof scene==="number"?OFFICES[scene]:null}
 function roomsOf(off){return (off&&off.rooms&&off.rooms.length)?off.rooms:[{id:"main",name:""}]}
 function curRoom(){const rs=roomsOf(curOffice());return rs[Math.min(ROOM,rs.length-1)]}
 function curAgents(){const off=curOffice(); if(!off) return []; const rs=roomsOf(off), r=curRoom(); return off.agents.filter(a=>(a.room||rs[0].id)===r.id).slice(0,6)}
+/* floors: each room is a floor; the staircase runs along the left wall (column 1).
+   rows 3-5 — flight up (if there is a floor above), rows 6-8 — flight down (if there is one below) */
+const STX=1, UP_T=[3,5], DN_T=[6,8];
+function floorsN(off){return Math.min(4,roomsOf(off).length)}
+function hasUp(){return ROOM<roomsOf(curOffice()).length-1}
+function hasDn(){return ROOM>0}
+function stairHere(ty){return (hasUp()&&ty>=UP_T[0]&&ty<=UP_T[1])||(hasDn()&&ty>=DN_T[0]&&ty<=DN_T[1])}
 function inSolid(tx,ty){
   if(ty<=1) return true;
   const nR=roomsOf(curOffice()).length;
-  if(tx<=0) return !(tx===0&&ROOM>0&&(ty===5||ty===6));
-  if(tx>=IW-1) return !(tx===IW-1&&ROOM<nR-1&&(ty===5||ty===6));
-  if(ty>=IH-1) return !(tx===7||tx===8);
+  if(tx<=0||tx>=IW-1) return true;
+  if(ty>=IH-1) return !(ROOM===0&&(tx===7||tx===8));
+  if(tx===2&&ty>=3&&ty<=8&&stairHere(ty)) return true;
+  if(tx===STX&&ty===DN_T[1]+1&&hasDn()) return true;
   if((tx===1&&ty===2)||(tx===14&&ty===2)) return true;
   for(let i=0;i<curAgents().length;i++){const [dx,dy]=DESKS[i]; if(ty===dy&&tx>=dx&&tx<=dx+2) return true; if(ty===dy-1&&tx===dx+1) return true;}
   return false;
@@ -658,18 +666,22 @@ function drawGround(){
     if(c==="g"&&h>.94){const fc=["#f4e04a","#f07ab0","#ffffff","#b48cf2"][(h*1000|0)%4];R(x+6,y+7,3,3,fc);R(x+7,y+8,1,1,"#e8a33a")}
   }
 }
+const FLOOR_H=20;
 function drawBuilding(sl,off){
-  const st=OST(off.id), x=sl.x*T,y=sl.y*T,w=6*T,h=4*T, roof=st.roof||off.roof||"#b8473a", wall=st.wall||"#e8dcc0", door=st.door||"#8a5a2c";
-  R(x-2,y+h-2,w+4,4,"rgba(0,0,0,.2)");
-  R(x,y+20,w,h-20,wall); for(let i=0;i<6;i++)R(x,y+26+i*6,w,1,shade(wall,.92));
+  const st=OST(off.id), x=sl.x*T,y0=sl.y*T,w=6*T,h=4*T, roof=st.roof||off.roof||"#b8473a", wall=st.wall||"#e8dcc0", door=st.door||"#8a5a2c";
+  const E=(floorsN(off)-1)*FLOOR_H, y=y0-E, night=isNight(), win=night?"#ffd77a":"#9fd3f0";
+  R(x-2,y0+h-2,w+4,4,"rgba(0,0,0,.2)");
+  R(x,y+20,w,h-20+E,wall); for(let yy=y+26;yy<y0+h;yy+=6)R(x,yy,w,1,shade(wall,.92));
+  for(let f=1;f<floorsN(off);f++){const fy=y0+20-f*FLOOR_H; // upper floors: cornice + windows
+    R(x,fy+FLOOR_H-2,w,2,shade(wall,.75));
+    [x+8,x+40,x+72].forEach(wx=>{R(wx-1,fy+3,18,13,"#7a5232");R(wx,fy+4,16,11,win);R(wx+7,fy+4,2,11,"#7a5232");if(!night)R(wx+2,fy+6,3,2,"#d8f0ff")})}
   R(x-4,y-2,w+8,24,roof); for(let i=0;i<5;i++)R(x-4,y+2+i*4,w+8,1,"rgba(0,0,0,.15)");
   R(x-4,y+20,w+8,3,"rgba(0,0,0,.35)");
   R(x+20,y+4,56,12,"#3a2414"); R(x+21,y+5,54,10,st.sign||"#f2b45a");
   ctx.fillStyle=st.sign_text||"#3a2414";ctx.font="8px 'Press Start 2P', monospace";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(String(st.label||off.short||off.name).slice(0,9),x+48,y+10.5,52);
-  const night=isNight(), win=night?"#ffd77a":"#9fd3f0";
-  [[x+8,y+30],[x+72,y+30]].forEach(([wx,wy])=>{R(wx-1,wy-1,18,14,"#7a5232");R(wx,wy,16,12,win);R(wx+7,wy,2,12,"#7a5232");R(wx,wy+5,16,2,"#7a5232");if(!night)R(wx+2,wy+2,3,2,"#d8f0ff")});
-  R(x+2*T-2,y+h-26,T*2+4,26,shade(door,.75)); R(x+2*T,y+h-24,T-1,24,door); R(x+3*T+1,y+h-24,T-1,24,door);
-  R(x+3*T-4,y+h-12,2,3,"#f2b45a"); R(x+3*T+2,y+h-12,2,3,"#f2b45a");
+  [[x+8,y0+30],[x+72,y0+30]].forEach(([wx,wy])=>{R(wx-1,wy-1,18,14,"#7a5232");R(wx,wy,16,12,win);R(wx+7,wy,2,12,"#7a5232");R(wx,wy+5,16,2,"#7a5232");if(!night)R(wx+2,wy+2,3,2,"#d8f0ff")});
+  R(x+2*T-2,y0+h-26,T*2+4,26,shade(door,.75)); R(x+2*T,y0+h-24,T-1,24,door); R(x+3*T+1,y0+h-24,T-1,24,door);
+  R(x+3*T-4,y0+h-12,2,3,"#f2b45a"); R(x+3*T+2,y0+h-12,2,3,"#f2b45a");
 }
 function drawSite(sl){
   const x=sl.x*T,y=sl.y*T,w=6*T,h=4*T;
@@ -786,11 +798,28 @@ function drawInterior(){
   const bx=IOX+6*T,by=IOY+4;R(bx,by,4*T,22,"#4a3020");R(bx+2,by+2,4*T-4,18,"#3a5a3a");
   [["#f4e04a",4],["#f07ab0",18],["#9fd3f0",32],["#f4f1e8",46]].forEach(([c,o])=>{R(bx+o,by+5,10,10,c);R(bx+o+2,by+8,6,1,"#555");R(bx+o+2,by+10,5,1,"#555")});
   [[1,2],[14,2]].forEach(([tx,ty])=>{const x=IOX+tx*T,y=IOY+ty*T;R(x+4,y+8,8,8,"#8a5a3a");R(x+2,y,4,10,"#4f9a4a");R(x+6,y-3,4,12,"#5fb35a");R(x+10,y+1,4,9,"#4f9a4a")});
-  R(IOX+7*T,IOY+(IH-1)*T,2*T,T,"#2a1a10"); R(IOX+7*T+2,IOY+(IH-1)*T-6,2*T-4,6,"#c4621e");
-  const rs=roomsOf(curOffice());
-  ctx.font="8px 'Press Start 2P', monospace";ctx.textBaseline="alphabetic";
-  if(ROOM>0){R(IOX,IOY+5*T,T,2*T,"#2a1a10");R(IOX+T-3,IOY+5*T,3,2*T,"#6b4423");ctx.fillStyle="#f6e3b8";ctx.textAlign="left";ctx.fillText("◀ "+(rs[ROOM-1].name||""),IOX+2,IOY+5*T-4)}
-  if(ROOM<rs.length-1){R(IOX+(IW-1)*T,IOY+5*T,T,2*T,"#2a1a10");R(IOX+(IW-1)*T,IOY+5*T,3,2*T,"#6b4423");ctx.fillStyle="#f6e3b8";ctx.textAlign="right";ctx.fillText((rs[ROOM+1].name||"")+" ▶",IOX+IW*T-2,IOY+5*T-4)}
+  if(ROOM===0){R(IOX+7*T,IOY+(IH-1)*T,2*T,T,"#2a1a10"); R(IOX+7*T+2,IOY+(IH-1)*T-6,2*T-4,6,"#c4621e")}
+  else R(IOX+T,IOY+(IH-1)*T,(IW-2)*T,T,shade(iw,.7));
+  drawStairs(fl);
+}
+function drawStairs(fl){
+  const x=IOX+STX*T, rail="#6b4423", wood="#c8925a";
+  ctx.font="6px 'Press Start 2P', monospace";ctx.textBaseline="alphabetic";ctx.textAlign="left";
+  if(hasUp()){ // flight up: steps get lighter and narrower toward the back wall
+    const y0=IOY+UP_T[0]*T, n=9, sh=3*T/n;
+    R(x-2,y0-4,T+4,3*T+4,"#3a2414");
+    for(let k=0;k<n;k++){const yy=y0+k*sh, f=0.75+0.35*(n-k)/n;R(x,yy,T,sh,shade(wood,f));R(x,yy+sh-1,T,1,shade(wood,.55))}
+    R(x+T-1,y0-6,3,3*T+6,rail); for(let k=0;k<4;k++)R(x+T-1,y0+k*12-6,5,2,rail);
+    R(x+T+2,y0-6,2,3*T+6,shade(rail,.8));
+    ctx.fillStyle="#f6e3b8";ctx.fillText("▲"+(ROOM+2)+" этаж",x-14,hasDn()?y0-9:y0+3*T+10);
+  }
+  if(hasDn()){ // flight down: a dark well, steps darker toward the bottom
+    const y0=IOY+DN_T[0]*T, n=9, sh=3*T/n;
+    R(x-2,y0-2,T+4,3*T+4,"#2a1a10");
+    for(let k=0;k<n;k++){const yy=y0+k*sh, f=1.0-0.6*k/n;R(x,yy,T,sh,shade(wood,f));R(x,yy+sh-1,T,1,shade(wood,f*.6))}
+    R(x+T-1,y0-2,3,3*T+4,rail); R(x-2,y0-4,T+5,3,rail);
+    ctx.fillStyle="#f6e3b8";ctx.fillText("▼"+ROOM+" этаж",x-14,y0+3*T+10);
+  }
 }
 
 /* ---------- builder animation, particles, decor, weather, settings ---------- */
@@ -1422,7 +1451,7 @@ function drawHead(x,y,skin,hair,lola){
 /* ---------- loop ---------- */
 const $place=document.getElementById("place");
 let last=performance.now();
-function placeLabel(){const off=curOffice();$place.textContent=off?(off.name+((roomsOf(off).length>1&&curRoom().name)?" · "+curRoom().name:"")):"Городок"}
+function placeLabel(){const off=curOffice();$place.textContent=off?(off.name+(roomsOf(off).length>1?" · "+(ROOM+1)+" этаж"+(curRoom().name?" · "+curRoom().name:""):"")):"Городок"}
 function update(dt){
   builderUpdate(dt); weatherUpdate(dt); yunaUpdate(dt);
   for(const o of Object.values(OTHERS)){ if(o.moving) o.step=(o.step||0)+dt/16 }
@@ -1460,10 +1489,10 @@ function update(dt){
     if(out[ty]&&out[ty][tx]==="d"){lastDoor=doorOf[ty][tx];fadeTo=lastDoor}
   } else {
     const ty=Math.floor((P.y-IOY)/T);
-    if(ty>=IH-1) fadeTo="out";
-    const nR=roomsOf(curOffice()).length;
-    if(P.x<IOX+T-2&&ROOM>0){ROOM--;P.x=IOX+(IW-1)*T-10;fade=0.7;placeLabel()}
-    else if(P.x>IOX+(IW-1)*T+2&&ROOM<nR-1){ROOM++;P.x=IOX+T+10;fade=0.7;placeLabel()}
+    if(ty>=IH-1&&ROOM===0) fadeTo="out";
+    const onSt=P.x>IOX+STX*T&&P.x<IOX+(STX+1)*T;
+    if(onSt&&hasUp()&&P.dir==="up"&&P.y<IOY+(UP_T[0]+0.6)*T){ROOM++;P.x=IOX+(STX+0.5)*T;P.y=IOY+(DN_T[0]-0.4)*T;P.dir="down";TAP=null;fade=0.8;placeLabel()}
+    else if(onSt&&hasDn()&&P.dir==="down"&&P.y>IOY+(DN_T[1]+0.85)*T){ROOM--;P.x=IOX+(STX+0.5)*T;P.y=IOY+(UP_T[1]+1.7)*T;P.dir="down";TAP=null;fade=0.8;placeLabel()}
   }
   const n=nearest();
   if(n){$pr.style.display="block";$pr.textContent=(matchMedia("(pointer:coarse)").matches?"E":"E / Пробел")+" — "+n.label}
@@ -1480,7 +1509,7 @@ function render(){
       drawBuilding(p.slot,p.office);
       if(paintJob&&paintJob.id===p.office.id){
         const sl=p.slot, cx0=sl.x*T-4, w=(6*T+8)*paintJob.p;
-        ctx.save();ctx.beginPath();ctx.rect(cx0,sl.y*T-4,w,4*T+8);ctx.clip();
+        ctx.save();ctx.beginPath();ctx.rect(cx0,sl.y*T-4-(floorsN(p.office)-1)*FLOOR_H,w,4*T+8+(floorsN(p.office)-1)*FLOOR_H);ctx.clip();
         const had=p.office.id in VIS.offices, saved=VIS.offices[p.office.id]; VIS.offices[p.office.id]=paintJob.st; drawBuilding(sl,p.office); if(had)VIS.offices[p.office.id]=saved; else delete VIS.offices[p.office.id]; ctx.restore();
       }
     };
