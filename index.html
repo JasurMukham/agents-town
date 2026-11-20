@@ -345,7 +345,7 @@ let TAP=null;
 function screenToWorld(e){
   const r=cv.getBoundingClientRect(); let lx=(e.clientX-r.left)/r.width*LW, ly=(e.clientY-r.top)/r.height*LH;
   if(scene==="out") return {x:lx+CAM.x,y:ly+CAM.y};
-  if(scene==="hangar") return {x:lx,y:ly};
+  if(scene==="hangar") return {x:lx,y:ly+HCAM};
   const Z=1.27; return {x:(lx+LW*(Z-1)/2)/Z,y:(ly+LH*(Z-1)/2)/Z};
 }
 function tapAt(e,first){
@@ -837,10 +837,12 @@ function drawStairs(fl){
 
 /* ---------- hangar: ECC subagents as crabs (data: town/hangar.json) ---------- */
 let HANGAR=null;
-const HSLOT={x:25,y:26,sx:31,sy:30}, HW=26, HH=17, HOX=(LW-HW*T)/2, HOY=(LH-HH*T)/2, HCOLS=12, HROWS=6, HDOOR=[12,13];
+const HSLOT={x:25,y:26,sx:31,sy:30}, HCOLS=10, HROWS=10, HW=2*HCOLS+3, HH=2*HROWS+5, HOX=(LW-HW*T)/2, HOY=8, HDOOR=[HCOLS+1,HCOLS+2];
+let HCAM=0; /* hangar is taller than the screen: vertical camera */
+function hangarSeats(){return HCOLS*HROWS}
 function doorSlot(d){return d==="hangar"?HSLOT:SLOTS[d]}
 function sceneKey(){const off=curOffice();return scene==="hangar"?"hangar":off?off.id:"out"}
-function hangarAgents(){return HANGAR?HANGAR.agents.slice(0,HCOLS*HROWS):[]}
+function hangarAgents(){return HANGAR?HANGAR.agents.slice(0,hangarSeats()):[]}
 function crabTile(i){return [2+2*(i%HCOLS),4+2*Math.floor(i/HCOLS)]}
 function crabGroup(a){const g=((HANGAR&&HANGAR.groups)||[]).find(x=>x.id===a.group)||{};return {name:g.name||"",color:HEX.test(g.color||"")?g.color:"#d97757"}}
 function strHash(s){return Math.abs(String(s).split("").reduce((a,c)=>a*31+c.charCodeAt(0)|0,7))}
@@ -886,12 +888,12 @@ function drawCrab(a,i){
 function hangarInteractables(){
   const list=hangarAgents().map((a,i)=>{const [tx,ty]=crabTile(i), L=crabLook(a);
     return {x:HOX+(tx+.5)*T,y:HOY+(ty+.5)*T,label:"поговорить: "+a.role,obj:{name:a.id,crab:true,color:L.color,acc:L.acc,prop:L.prop,lines:[`Привет! Я ${a.role}${L.group?" из группы «"+L.group+"»":""}.`,a.job||"Помогаю в Claude Code.",`Позови меня в Claude Code: агент ecc:${a.id}.`]}}});
-  list.push({x:HOX+13*T,y:HOY+2.5*T,label:"прочитать табло",obj:hangarBoard()});
+  list.push({x:HOX+HW*T/2,y:HOY+2.5*T,label:"прочитать табло",obj:hangarBoard()});
   return list;
 }
 function hangarBoard(){
   const ag=hangarAgents(), groups=((HANGAR&&HANGAR.groups)||[]).map(g=>`${g.name} — ${ag.filter(a=>a.group===g.id).length}`).join(", ");
-  return {name:HANGAR?HANGAR.name:"Ангар",lines:[`Здесь живут ${ag.length} агентов из плагина ECC — по крабику на каждого.`,groups?`Цвет крабика — его группа: ${groups}.`:"Крабики ждут работы.","Подойди к крабику и нажми E — он расскажет, что умеет.","В городке они не работают по расписанию: их зовут прямо в Claude Code."]};
+  return {name:HANGAR?HANGAR.name:"Ангар",lines:[`Здесь живут ${ag.length} агентов из плагина ECC — по крабику на каждого. Всего мест ${hangarSeats()}, свободно ${hangarSeats()-ag.length}.`,groups?`Цвет крабика — его группа: ${groups}.`:"Крабики ждут работы.","Подойди к крабику и нажми E — он расскажет, что умеет.","В городке они не работают по расписанию: их зовут прямо в Claude Code."]};
 }
 function drawHangarBldg(sl){
   const x=sl.x*T,y=sl.y*T,w=6*T,h=4*T,night=isNight(),wall="#8d99a6",roof="#6b7886",cx=x+w/2;
@@ -912,18 +914,21 @@ function drawHangarBldg(sl){
 }
 function drawHangarInside(){
   const fl="#9aa1a8", wl="#7d8a97";
-  R(0,0,LW,LH,"#14181f");
+  R(0,HCAM,LW,LH,"#14181f");
   for(let ty=3;ty<HH;ty++)for(let tx=1;tx<HW-1;tx++){const x=HOX+tx*T,y=HOY+ty*T;R(x,y,T,T,(tx+ty)%2?fl:shade(fl,.96));R(x,y+15,T,1,shade(fl,.85));if(hash(tx+40,ty)>.8)R(x+5,y+6,3,1,shade(fl,.88))}
   R(HOX,HOY,HW*T,3*T,wl); for(let i=0;i<HW*T;i+=4)R(HOX+i,HOY,1,3*T,shade(wl,.88));
   R(HOX,HOY,HW*T,4,"#4a505c"); for(let k=1;k<HW;k+=4){R(HOX+k*T+6,HOY+4,4,3,"#3a3f4a");R(HOX+k*T+5,HOY+7,6,2,"#fff2c0")}
   R(HOX,HOY+3*T-3,HW*T,3,"#3a3f4a");
   R(HOX,HOY,T,HH*T,shade(wl,.8)); R(HOX+(HW-1)*T,HOY,T,HH*T,shade(wl,.8));
-  const bx=HOX+8*T, bw=10*T; R(bx,HOY+8,bw,30,"#1f242c"); R(bx+2,HOY+10,bw-4,26,"#2b313b");
+  const bw=10*T, bx=HOX+(HW*T-bw)/2; R(bx,HOY+8,bw,30,"#1f242c"); R(bx+2,HOY+10,bw-4,26,"#2b313b");
   ctx.font="8px 'Press Start 2P', monospace";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillStyle="#ffb08a";
-  ctx.fillText(`${HANGAR?HANGAR.name:"Ангар"} · ${hangarAgents().length}`,bx+bw/2,HOY+19,bw-8);
+  ctx.fillText(`${HANGAR?HANGAR.name:"Ангар"} · ${hangarAgents().length}/${hangarSeats()}`,bx+bw/2,HOY+19,bw-8);
   const gs=((HANGAR&&HANGAR.groups)||[]); ctx.font="6px 'Press Start 2P', monospace";
   gs.slice(0,4).forEach((g,k)=>{const gx=bx+8+k*(bw-16)/4, c=HEX.test(g.color||"")?g.color:"#d97757";R(gx,HOY+28,5,5,c);ctx.textAlign="left";ctx.fillStyle="#e8e2d6";ctx.fillText(String(g.name||"").slice(0,12),gx+7,HOY+31,(bw-16)/4-9)});
-  hangarAgents().forEach((a,i)=>{const [tx,ty]=crabTile(i);R(HOX+tx*T+1,HOY+(ty+1)*T-4,T-2,4,shade(crabGroup(a).color,.55))});
+  const ag=hangarAgents();
+  for(let i=0;i<hangarSeats();i++){const [tx,ty]=crabTile(i), x=HOX+tx*T+1, y=HOY+(ty+1)*T-4;
+    if(ag[i]) R(x,y,T-2,4,shade(crabGroup(ag[i]).color,.55));
+    else {for(let k=0;k<T-2;k+=4)R(x+k,y,2,1,"#6f767e");for(let k=0;k<T-2;k+=4)R(x+k,y+3,2,1,"#6f767e");R(x,y,1,4,"#6f767e");R(x+T-3,y,1,4,"#6f767e")}}
   for(let tx=1;tx<HW-1;tx++){const x=HOX+tx*T,y=HOY+(HH-1)*T-3;for(let i=0;i<T;i+=8){R(x+i,y,4,3,"#f2c230");R(x+i+4,y,4,3,"#2b2f38")}}
   R(HOX+T,HOY+(HH-1)*T,(HW-2)*T,T,shade(wl,.6));
   R(HOX+HDOOR[0]*T,HOY+(HH-1)*T,2*T,T,"#2a1a10"); R(HOX+HDOOR[0]*T+2,HOY+(HH-1)*T-6,2*T-4,6,"#c4621e");
@@ -1650,12 +1655,15 @@ function render(){
     CAM.x=0;CAM.y=0; drawLoveRoom();
   } else if(scene==="hangar"){
     CAM.x=0;CAM.y=0;
+    HCAM=Math.max(0,Math.min(2*HOY+HH*T-LH,Math.round(P.y-LH/2)));
+    ctx.setTransform(S,0,0,S,0,-HCAM*S);
     drawHangarInside();
     const objs=hangarAgents().map((a,i)=>({y:HOY+(crabTile(i)[1]+1)*T,d:()=>drawCrab(a,i)}));
     objs.push({y:P.y,d:drawPlayer});
     othersHere().forEach(o=>objs.push({y:o.y,d:()=>drawPlayerAt(o,Object.assign({},DEFAULT_PLAYER,o.look||{},{name:(o.look&&o.look.name)||ownerName(o.login)}))}));
     objs.sort((a,b)=>a.y-b.y).forEach(o=>o.d());
     drawCrabTag();
+    ctx.setTransform(S,0,0,S,0,0);
   } else {
     CAM.x=0;CAM.y=0;
     const Z=1.27; ctx.setTransform(S*Z,0,0,S*Z,-LW*(Z-1)/2*S,-LH*(Z-1)/2*S);
@@ -1670,7 +1678,7 @@ function render(){
   if(fadeTo!==null||fade>0){
     if(fadeTo!==null){fade+=0.08; if(fade>=1){
       scene=fadeTo; fadeTo=null;
-      if(scene==="hangar"){ROOM=0;P.x=HOX+13.5*T;P.y=HOY+(HH-2)*T+10;P.dir="up";placeLabel()}
+      if(scene==="hangar"){ROOM=0;P.x=HOX+(HDOOR[0]+.5)*T;P.y=HOY+(HH-2)*T+10;P.dir="up";placeLabel()}
       else if(scene!=="out"){ROOM=0;P.x=IOX+8*T;P.y=IOY+(IH-2)*T+10;P.dir="up";placeLabel()}
       else {const sl=doorSlot(lastDoor);P.x=(sl.x+3)*T;P.y=(sl.y+5)*T+4;P.dir="down";ROOM=0;placeLabel()}
     }}
