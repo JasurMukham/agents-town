@@ -345,7 +345,7 @@ let TAP=null;
 function screenToWorld(e){
   const r=cv.getBoundingClientRect(); let lx=(e.clientX-r.left)/r.width*LW, ly=(e.clientY-r.top)/r.height*LH;
   if(scene==="out") return {x:lx+CAM.x,y:ly+CAM.y};
-  if(scene==="hangar") return {x:lx,y:ly+HCAM};
+  if(scene==="hangar") return {x:(lx-HZX)/HZ,y:(ly-HZY)/HZ};
   const Z=1.27; return {x:(lx+LW*(Z-1)/2)/Z,y:(ly+LH*(Z-1)/2)/Z};
 }
 function tapAt(e,first){
@@ -838,7 +838,8 @@ function drawStairs(fl){
 /* ---------- hangar: ECC subagents as crabs (data: town/hangar.json) ---------- */
 let HANGAR=null;
 const HSLOT={x:25,y:26,sx:31,sy:30}, HCOLS=10, HROWS=10, HW=2*HCOLS+3, HH=2*HROWS+5, HOX=(LW-HW*T)/2, HOY=8, HDOOR=[HCOLS+1,HCOLS+2];
-let HCAM=0; /* hangar is taller than the screen: vertical camera */
+/* the whole hangar is scaled to fit the screen: all seats visible at once */
+const HZ=Math.min(1,LH/(2*HOY+HH*T)), HZX=LW/2*(1-HZ), HZY=(LH-(2*HOY+HH*T)*HZ)/2;
 function hangarSeats(){return HCOLS*HROWS}
 function doorSlot(d){return d==="hangar"?HSLOT:SLOTS[d]}
 function sceneKey(){const off=curOffice();return scene==="hangar"?"hangar":off?off.id:"out"}
@@ -914,21 +915,20 @@ function drawHangarBldg(sl){
 }
 function drawHangarInside(){
   const fl="#9aa1a8", wl="#7d8a97";
-  R(0,HCAM,LW,LH,"#14181f");
   for(let ty=3;ty<HH;ty++)for(let tx=1;tx<HW-1;tx++){const x=HOX+tx*T,y=HOY+ty*T;R(x,y,T,T,(tx+ty)%2?fl:shade(fl,.96));R(x,y+15,T,1,shade(fl,.85));if(hash(tx+40,ty)>.8)R(x+5,y+6,3,1,shade(fl,.88))}
   R(HOX,HOY,HW*T,3*T,wl); for(let i=0;i<HW*T;i+=4)R(HOX+i,HOY,1,3*T,shade(wl,.88));
   R(HOX,HOY,HW*T,4,"#4a505c"); for(let k=1;k<HW;k+=4){R(HOX+k*T+6,HOY+4,4,3,"#3a3f4a");R(HOX+k*T+5,HOY+7,6,2,"#fff2c0")}
   R(HOX,HOY+3*T-3,HW*T,3,"#3a3f4a");
   R(HOX,HOY,T,HH*T,shade(wl,.8)); R(HOX+(HW-1)*T,HOY,T,HH*T,shade(wl,.8));
-  const bw=10*T, bx=HOX+(HW*T-bw)/2; R(bx,HOY+8,bw,30,"#1f242c"); R(bx+2,HOY+10,bw-4,26,"#2b313b");
-  ctx.font="8px 'Press Start 2P', monospace";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillStyle="#ffb08a";
-  ctx.fillText(`${HANGAR?HANGAR.name:"Ангар"} · ${hangarAgents().length}/${hangarSeats()}`,bx+bw/2,HOY+19,bw-8);
-  const gs=((HANGAR&&HANGAR.groups)||[]); ctx.font="6px 'Press Start 2P', monospace";
-  gs.slice(0,4).forEach((g,k)=>{const gx=bx+8+k*(bw-16)/4, c=HEX.test(g.color||"")?g.color:"#d97757";R(gx,HOY+28,5,5,c);ctx.textAlign="left";ctx.fillStyle="#e8e2d6";ctx.fillText(String(g.name||"").slice(0,12),gx+7,HOY+31,(bw-16)/4-9)});
+  const bw=(HW-4)*T, bx=HOX+(HW*T-bw)/2; R(bx,HOY+6,bw,36,"#1f242c"); R(bx+2,HOY+8,bw-4,32,"#2b313b");
+  ctx.font="11px 'Press Start 2P', monospace";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillStyle="#ffb08a";
+  ctx.fillText(`${HANGAR?HANGAR.name:"Ангар"} · ${hangarAgents().length}/${hangarSeats()}`,bx+bw/2,HOY+17,bw-8);
+  const gs=((HANGAR&&HANGAR.groups)||[]); ctx.font="8px 'Press Start 2P', monospace";
+  gs.slice(0,4).forEach((g,k)=>{const gx=bx+8+k*(bw-16)/4, c=HEX.test(g.color||"")?g.color:"#d97757";R(gx,HOY+29,6,6,c);ctx.textAlign="left";ctx.fillStyle="#e8e2d6";ctx.fillText(String(g.name||"").slice(0,12),gx+9,HOY+32.5,(bw-16)/4-11)});
   const ag=hangarAgents();
   for(let i=0;i<hangarSeats();i++){const [tx,ty]=crabTile(i), x=HOX+tx*T+1, y=HOY+(ty+1)*T-4;
     if(ag[i]) R(x,y,T-2,4,shade(crabGroup(ag[i]).color,.55));
-    else {for(let k=0;k<T-2;k+=4)R(x+k,y,2,1,"#6f767e");for(let k=0;k<T-2;k+=4)R(x+k,y+3,2,1,"#6f767e");R(x,y,1,4,"#6f767e");R(x+T-3,y,1,4,"#6f767e")}}
+    else {const c="#eef2f5", y0=y-9;for(let k=0;k<T-2;k+=4){R(x+k,y0,2,1,c);R(x+k,y+3,2,1,c)}for(let k=0;k<13;k+=4){R(x,y0+k,1,2,c);R(x+T-3,y0+k,1,2,c)}R(x+6,y0+5,2,6,c);R(x+4,y0+7,6,2,c)}}
   for(let tx=1;tx<HW-1;tx++){const x=HOX+tx*T,y=HOY+(HH-1)*T-3;for(let i=0;i<T;i+=8){R(x+i,y,4,3,"#f2c230");R(x+i+4,y,4,3,"#2b2f38")}}
   R(HOX+T,HOY+(HH-1)*T,(HW-2)*T,T,shade(wl,.6));
   R(HOX+HDOOR[0]*T,HOY+(HH-1)*T,2*T,T,"#2a1a10"); R(HOX+HDOOR[0]*T+2,HOY+(HH-1)*T-6,2*T-4,6,"#c4621e");
@@ -936,8 +936,8 @@ function drawHangarInside(){
 function drawCrabTag(){
   const n=nearest(); if(!n||!n.obj.crab) return;
   ctx.font="6px 'Press Start 2P', monospace";ctx.textAlign="center";ctx.textBaseline="alphabetic";
-  const t=n.obj.name, w=ctx.measureText(t).width+6, y=n.y-14;
-  R(n.x-w/2,y-8,w,10,"rgba(42,31,23,.88)");ctx.fillStyle="#ffffff";ctx.fillText(t,n.x,y-0.5);
+  const t=n.obj.name, w=ctx.measureText(t).width+6, x=HZX+n.x*HZ, y=HZY+(n.y-14)*HZ;
+  R(x-w/2,y-8,w,10,"rgba(42,31,23,.88)");ctx.fillStyle="#ffffff";ctx.fillText(t,x,y-0.5);
 }
 
 /* ---------- builder animation, particles, decor, weather, settings ---------- */
@@ -1569,7 +1569,7 @@ function drawHead(x,y,skin,hair,lola){
 /* ---------- loop ---------- */
 const $place=document.getElementById("place");
 let last=performance.now();
-function placeLabel(){const off=curOffice();$place.textContent=scene==="hangar"?(HANGAR?HANGAR.name:"Ангар"):off?(off.name+(roomsOf(off).length>1?" · "+(ROOM+1)+" этаж"+(curRoom().name?" · "+curRoom().name:""):"")):"Городок"}
+function placeLabel(){const off=curOffice();$place.textContent=scene==="hangar"?`${HANGAR?HANGAR.name:"Ангар"} · занято ${hangarAgents().length} из ${hangarSeats()} мест`:off?(off.name+(roomsOf(off).length>1?" · "+(ROOM+1)+" этаж"+(curRoom().name?" · "+curRoom().name:""):"")):"Городок"}
 function update(dt){
   builderUpdate(dt); weatherUpdate(dt); yunaUpdate(dt);
   for(const o of Object.values(OTHERS)){ if(o.moving) o.step=(o.step||0)+dt/16 }
@@ -1655,15 +1655,15 @@ function render(){
     CAM.x=0;CAM.y=0; drawLoveRoom();
   } else if(scene==="hangar"){
     CAM.x=0;CAM.y=0;
-    HCAM=Math.max(0,Math.min(2*HOY+HH*T-LH,Math.round(P.y-LH/2)));
-    ctx.setTransform(S,0,0,S,0,-HCAM*S);
+    R(0,0,LW,LH,"#14181f");
+    ctx.setTransform(S*HZ,0,0,S*HZ,HZX*S,HZY*S);
     drawHangarInside();
     const objs=hangarAgents().map((a,i)=>({y:HOY+(crabTile(i)[1]+1)*T,d:()=>drawCrab(a,i)}));
     objs.push({y:P.y,d:drawPlayer});
     othersHere().forEach(o=>objs.push({y:o.y,d:()=>drawPlayerAt(o,Object.assign({},DEFAULT_PLAYER,o.look||{},{name:(o.look&&o.look.name)||ownerName(o.login)}))}));
     objs.sort((a,b)=>a.y-b.y).forEach(o=>o.d());
-    drawCrabTag();
     ctx.setTransform(S,0,0,S,0,0);
+    drawCrabTag();
   } else {
     CAM.x=0;CAM.y=0;
     const Z=1.27; ctx.setTransform(S*Z,0,0,S*Z,-LW*(Z-1)/2*S,-LH*(Z-1)/2*S);
